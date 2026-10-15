@@ -1,4 +1,4 @@
-# PSO and RBF files, manifests and audio data
+# PSO, RBF and XML data files, manifests and audio data
 
 ## PSO (binary .ymt, .ypdb, .ymf)
 
@@ -28,6 +28,24 @@ for (const RbfNode* item : root.child("pedCompExpressions")->children_named("Ite
 rsc::write_file("copy.ymt", write_rbf(root));
 std::puts(rbf_dump(root).c_str());   // as XML-like text; rk info <file> prints the same
 ```
+
+## XML data files (`.meta`)
+
+Most of the game's data files are XML: `vehicles.meta`, `carcols.meta`, `carvariations.meta`, `handling.meta`,
+`vehiclelayouts.meta`, `peds.meta`, `pedalternatevariations.meta`, `shop_*.meta`, `content.xml`, `setup2.xml` ... (the base
+game ships a few of them as PSO `.ymt` instead, see above). `xml_dom.h` reads them into a tree of elements (name, attributes,
+text, children) and writes a tree back the game's way: CR LF, two-space indents, `<name value="1" />` for empty elements.
+
+```cpp
+const Bytes b = rsc::read_file("vehicles.meta");
+XmlElement doc = parse_xml(std::string_view((const char*)b.data(), b.size()));
+for (const XmlElement* item : doc.child("InitDatas")->children_named("Item"))
+    std::printf("%s\n", item->child_text("modelName").c_str());
+std::string text = write_xml(doc);
+```
+
+Written back, every one of the game's 2,857 `.meta` and `.xml` files reads as the same document. Comments and the original
+layout are not kept.
 
 ## Streaming manifests (`_manifest.ymf`)
 

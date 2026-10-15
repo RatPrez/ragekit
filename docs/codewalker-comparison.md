@@ -44,7 +44,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | .ymap map data | yes + XML | **yes** typed (entities, MLO instances, car generators, box occluders, timecycle modifiers; occluder meshes, LOD lights, instanced grass/props, container LODs kept as they are) + decoded occluders (`occluder.h`) | typed LOD lights and grass; XML |
 | PSO (`.ymt`, `.ypdb`, `.ymf`, many `.meta` binaries) | yes + XML (PsoBuilder) | **yes** as a container (byte for byte), a schema-driven walker and dump (`pso.h`), typed `_manifest.ymf` (`manifest.h`) | XML -> PSO; typed models for carcols, carvariations, peds ... |
 | RBF (creature metadata `.ymt`, cutscene / Bink metadata) | yes + XML | **yes**, byte for byte on all 200 game files (`rbf.h`) | XML |
-| XML `.meta` text files (vehicles.meta, carcols.meta, handling, content.xml, setup2.xml) | parsed into typed classes | a small DOM reader (`xml_dom.h`) the game index uses for content.xml / setup2.xml | typed models |
+| XML `.meta` text files (vehicles.meta, carcols.meta, handling, content.xml, setup2.xml) | parsed into typed classes | **yes**: a DOM reader and writer (`xml_dom.h`); all 2,857 game files read back the same | typed models |
 | .gxt2 text tables | yes | - | everything |
 | Cache dat (`gta5_cache_y.dat`) | read | read: the bounds store and interior proxies (`world.h`) | the rest |
 | Heightmap / watermap / distant lights | read, write | - | everything |

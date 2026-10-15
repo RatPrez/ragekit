@@ -73,7 +73,7 @@ struct Parser {
             skip_ws();
             if (at("<!--")) skip_past("-->", "unterminated comment");
             else if (at("<?")) skip_past("?>", "unterminated processing instruction");
-            else if (at("<!DOCTYPE") || at("<!doctype")) skip_past(">", "unterminated DOCTYPE");
+            else if (at("<!")) skip_past(">", "unterminated declaration");   // the DOCTYPE, and the game's own "<! --- note --- />"
             else return;
         }
     }
@@ -125,6 +125,7 @@ struct Parser {
                 continue;
             }
             if (at("<?")) { skip_past("?>", "unterminated processing instruction"); continue; }
+            if (at("<!")) { skip_past(">", "unterminated declaration"); continue; }
             if (s[p] == '<') { e.children.push_back(element()); continue; }
             const size_t b = p;
             while (p < s.size() && s[p] != '<') p++;
@@ -171,6 +172,55 @@ XmlElement parse_xml(std::string_view text) {
     XmlElement root = ps.element();
     ps.skip_misc();
     return root;
+}
+
+namespace {
+
+void escape_into(std::string& out, std::string_view s, bool attribute) {
+    for (char c : s) {
+        switch (c) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;"; break;
+            case '>': out += "&gt;"; break;
+            case '"': if (attribute) out += "&quot;"; else out += c; break;
+            case '\n': if (attribute) out += "&#10;"; else out += c; break;
+            case '\r': out += "&#13;"; break;
+            case '\t': if (attribute) out += "&#9;"; else out += c; break;
+            default: out += c;
+        }
+    }
+}
+
+void write_element(std::string& out, const XmlElement& e, int depth, const XmlWriteOptions& o) {
+    std::string pad;
+    for (int i = 0; i < depth; i++) pad += o.indent;
+    out += pad + "<" + e.name;
+    for (auto& [n, v] : e.attributes) {
+        out += " " + n + "=\"";
+        escape_into(out, v, true);
+        out += "\"";
+    }
+    if (e.text.empty() && e.children.empty()) {
+        out += " />" + o.newline;
+        return;
+    }
+    out += ">";
+    escape_into(out, e.text, false);
+    if (!e.children.empty()) {
+        out += o.newline;
+        for (const XmlElement& c : e.children) write_element(out, c, depth + 1, o);
+        out += pad;
+    }
+    out += "</" + e.name + ">" + o.newline;
+}
+
+} // namespace
+
+std::string write_xml(const XmlElement& root, const XmlWriteOptions& o) {
+    std::string out;
+    if (o.declaration) out += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + o.newline;
+    write_element(out, root, 0, o);
+    return out;
 }
 
 } // namespace rk

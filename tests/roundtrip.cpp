@@ -416,6 +416,23 @@ static bool test_rel(const std::string& label, const Bytes& file) {
 static bool test_bytes(const std::string& label, const std::string& ext, const Bytes& file) {
     g_digest = 0;
     if (ext == ".rel") return test_rel(label, file);
+    if ((ext == ".meta" || ext == ".xml") && !is_rbf(file) && !is_pso(file)) {
+        // XML data files (vehicles.meta, carcols, handling, peds ...): parse -> write -> parse must give the same document
+        try {
+            const XmlElement a = parse_xml(std::string_view((const char*)file.data(), file.size()));
+            const std::string w = write_xml(a);
+            mix(Bytes(w.begin(), w.end()));
+            if (!(parse_xml(w) == a)) {
+                std::printf("DIFF  %-60s  the written XML reads back as a different document\n", label.c_str());
+                return false;
+            }
+        } catch (const std::exception& e) {
+            std::printf("FAIL  %-60s  %s\n", label.c_str(), e.what());
+            return false;
+        }
+        std::printf("ok    %-60s  %zu bytes, XML\n", label.c_str(), file.size());
+        return true;
+    }
     if (is_rbf(file)) {
         // RBF (creature metadata, cutscene / Bink metadata): read -> write must give the identical bytes
         try {
@@ -553,7 +570,8 @@ static bool test_file(const fs::path& path) {
 }
 
 static bool tested_ext(const std::string& ext) {
-    return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf";
+    return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
+           ext == ".meta" || ext == ".xml";
 }
 
 static std::map<std::string, uint64_t> g_recorded, g_written;

@@ -12,8 +12,8 @@ rk_roundtrip [--only=.ytyp,.ymap,.rel] [--record=f | --check=f] <file or directo
 rk_roundtrip --game[=install dir] [--every=N] [--max=N] [--only=...] [--record=f | --check=f]
 ```
 
-`--game` takes a sample of a GTA V install through the game index: every Nth `rel ybn ydd ydr ymap ymf ymt ytd ytyp`. PSO,
-RBF and `.rel` files must come back byte for byte.
+`--game` takes a sample of a GTA V install through the game index: every Nth `rel ybn ydd ydr ymap ymf ymt ytd ytyp meta xml`.
+PSO, RBF and `.rel` files must come back byte for byte, XML data files as the same document.
 `--record` keeps a digest of everything written per file and `--check` compares a later run with it, so a rewrite of
 any module can be held to the bytes the previous code wrote. With `--every=50` that is 4,860 files of the Legacy install
 in about four and a half minutes, all of which read back field for field.
