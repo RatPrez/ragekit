@@ -1,7 +1,7 @@
 # ragekit and CodeWalker: file format coverage
 
 What CodeWalker.Core can do per file type, next to what ragekit does today. "XML" means CodeWalker's XML round trip for
-that type (its import and export). Updated 2026-10-15.
+that type (its import and export). Updated 2026-10-16.
 
 Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 
@@ -21,13 +21,13 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | .ytd texture dictionary | yes + XML/DDS | **yes** + DDS/PNG; decodes every DXT/BC/uncompressed format; encodes DXT1/5, BC4/5 and uncompressed; mips; **XML export** | BC7/BC6H encode; XML import |
 | .ydr drawable | yes + XML | **yes** (shaders and parameters, textures, skeleton, joints, LODs, lights, embedded bounds); **XML export**; the shader database names every parameter | XML import |
 | .ydd drawable dictionary | yes + XML | **yes**; XML export | XML import |
-| .yft fragment | yes + XML | **read** (drawable, physics LODs, groups, children, archetypes, glass; cloth skipped) | writer; cloth (`environment cloth`, `char cloth`); XML |
+| .yft fragment | yes + XML | **read** (drawable, physics LODs, groups, children, archetypes, glass, environment cloth); the cloth also writes (`src/cloth_io.h`), and all 1,828 game fragments with cloth round-trip it | writer; XML |
 | .ybn collision | yes + XML | **yes** (every bound type, BVH read and build, geometry builder, materials with room id); XML export | XML import; ragekit builds its own BVH trees |
 | .ycd clip dictionary (animations) | yes + XML | - | everything: clips, animations, channel packing, sequences |
 | .ynv navmesh | yes + XML + builder | - | everything |
 | .ynd path nodes (traffic) | yes + XML + builder | - | everything |
 | .yed expression dictionary | yes + XML | - | everything |
-| .yld cloth dictionary | yes + XML | - | everything |
+| .yld cloth dictionary | yes + XML | **yes** (character cloth: controller, bridge, verlet cloth, skinning, capsule bounds); all 61 game files round-trip, every structure byte the same but vtables | XML |
 | .yfd frame filter dictionary | yes + XML | - | everything |
 | .ypdb pose matcher | yes + XML | PSO container only | typed model |
 | .ypt particle effects | read (+ partial XML) | - | everything |
@@ -70,7 +70,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 ## Next for ragekit
 
 1. Writing NG-encrypted archives.
-2. Fragments (`.yft`): writing, and cloth.
+2. Fragments (`.yft`): writing.
 3. Typed models for the common PSO files (carcols, carvariations, peds ...).
 4. GTA V Enhanced (the gen9 formats).
 5. Animations (`.ycd`), and the smaller formats people ask for (`.gxt2`, `.awc`).

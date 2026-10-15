@@ -8,6 +8,7 @@
 #include "image.h"
 #include "drawable.h"
 #include "bounds.h"
+#include "cloth.h"
 #include "fragment.h"
 #include "meta.h"
 #include "map.h"

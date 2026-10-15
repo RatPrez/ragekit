@@ -107,6 +107,7 @@ struct Bound {
     uint16_t unk5E = 0;
     Vec3 inertia;
     float volume = 0;
+    float unk70 = 0;                 // capsule, disc, cylinder (128 bytes); cloth capsules carry values
 
     // Geometry / GeometryBVH
     struct Geometry {

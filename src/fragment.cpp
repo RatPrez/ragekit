@@ -2,6 +2,7 @@
 #include "ragekit/error.h"
 #include "drawable_io.h"
 #include "bounds_io.h"
+#include "cloth_io.h"
 #include <cstring>
 
 namespace rk {
@@ -132,7 +133,7 @@ Fragment read_yft(std::span<const uint8_t> file) {
     uint32_t array_count = c.u32();        // 0x48
     c.u32(); c.u64();
     uint64_t name_ptr = c.u64();           // 0x58
-    c.u64();                               // 0x60 cloths pointer
+    uint64_t cloths_ptr = c.u64();         // 0x60
     f.cloth_count = c.u16();               // 0x68
     c.pos = ptr + 0xA8;
     uint64_t bone_tr_ptr = c.u64();        // 0xA8
@@ -185,6 +186,7 @@ Fragment read_yft(std::span<const uint8_t> file) {
         }
     }
     if (cloth_drawable_ptr) f.drawable_cloth = read_frag_drawable(r, cloth_drawable_ptr);
+    for (uint64_t p : r.array<uint64_t>(cloths_ptr, f.cloth_count)) f.cloths.push_back(p ? read_environment_cloth(r, p) : EnvironmentCloth{});
     if (vglass_ptr) {
         uint32_t total = r.u32(vglass_ptr + 8);
         f.vehicle_glass_windows = r.bytes(vglass_ptr, total);

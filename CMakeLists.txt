@@ -28,6 +28,7 @@ add_library(ragekit STATIC
     src/image.cpp
     src/drawable.cpp
     src/bounds.cpp
+    src/cloth.cpp
     src/fragment.cpp
     src/meta.cpp
     src/map.cpp
@@ -81,6 +82,7 @@ if (RAGEKIT_BUILD_TESTS)
     target_link_libraries(rk_rsc_test PRIVATE ragekit)
     add_executable(rk_roundtrip tests/roundtrip.cpp)
     target_link_libraries(rk_roundtrip PRIVATE ragekit)
+    target_include_directories(rk_roundtrip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)   # cloth_io.h: fragment cloth into a test resource
     add_executable(rk_rpf_test tests/rpf_test.cpp)
     target_link_libraries(rk_rpf_test PRIVATE ragekit)
     target_include_directories(rk_rpf_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

@@ -12,11 +12,13 @@
 #include "ragekit/gameindex.h"
 #include "ragekit/manifest.h"
 #include "ragekit/ragekit.h"
+#include "cloth_io.h"
 
 namespace fs = std::filesystem;
 using namespace rk;
 
 static uint64_t g_digest = 0;
+static bool g_untested = false;   // test_bytes looked at the file but had nothing to test (a .yft without cloth)
 static void mix(const Bytes& b) {
     uint64_t h = g_digest ? g_digest : 1469598103934665603ull;
     for (uint8_t c : b) { h ^= c; h *= 1099511628211ull; }
@@ -141,6 +143,12 @@ static void compare_bound(Cmp& c, const Bound& a, const Bound& b, const std::str
     c.eqv(a.sphere_center, b.sphere_center, p + ".sphere_center"); c.eqf(a.sphere_radius, b.sphere_radius, p + ".sphere_radius"); c.eqf(a.margin, b.margin, p + ".margin");
     c.eq(a.material_index, b.material_index, p + ".material"); c.eq(a.room_ped_density, b.room_ped_density, p + ".room"); c.eq(a.unk_flags, b.unk_flags, p + ".unk_flags");
     c.eq(a.poly_flags, b.poly_flags, p + ".poly_flags"); c.eqf(a.volume, b.volume, p + ".volume"); c.eqv(a.inertia, b.inertia, p + ".inertia");
+    c.eq(a.unk3C, b.unk3C, p + ".unk3C"); c.eq(a.procedural_id, b.procedural_id, p + ".procedural_id"); c.eq(a.material_colour_index, b.material_colour_index, p + ".material_colour");
+    c.eq(a.unk5E, b.unk5E, p + ".unk5E"); c.eqf(a.unk70, b.unk70, p + ".unk70");
+    c.eq(a.has_child_flags, b.has_child_flags, p + ".has_child_flags"); c.eq(a.has_child_transforms2, b.has_child_transforms2, p + ".has_child_transforms2");
+    c.eq(a.child_transforms2.size(), b.child_transforms2.size(), p + ".child_transforms2.count");
+    for (size_t i = 0; i < a.child_transforms2.size() && i < b.child_transforms2.size(); i++)
+        if (std::memcmp(&a.child_transforms2[i], &b.child_transforms2[i], sizeof(BoundTransform)) != 0) c.fail(p + ".child_transform2");
     c.eq(a.geometry.has_value(), b.geometry.has_value(), p + ".has_geometry");
     if (a.geometry && b.geometry) {
         auto& x = *a.geometry; auto& y = *b.geometry;
@@ -176,6 +184,79 @@ static void compare_bound(Cmp& c, const Bound& a, const Bound& b, const std::str
         c.eq(x.flags1, y.flags1, cp + ".flags1"); c.eq(x.flags2, y.flags2, cp + ".flags2");
         if (x.bound && y.bound) compare_bound(c, *x.bound, *y.bound, cp);
     }
+}
+
+// Cloth: every array element bit for bit (floats included), every value field, every nested structure and bound.
+template <class T> static void eq_bits(Cmp& c, const std::vector<T>& a, const std::vector<T>& b, const std::string& what) {
+    if (a.size() != b.size()) { c.fail(what + ".count"); return; }
+    for (size_t i = 0; i < a.size(); i++) if (std::memcmp(&a[i], &b[i], sizeof(T)) != 0) { c.fail(what + "[" + std::to_string(i) + "]"); return; }
+}
+static void compare_bound_ptr(Cmp& c, const std::shared_ptr<Bound>& a, const std::shared_ptr<Bound>& b, const std::string& p) {
+    c.eq((bool)a, (bool)b, p + ".present");
+    if (a && b) compare_bound(c, *a, *b, p);
+}
+static void compare_verlet(Cmp& c, const VerletCloth& a, const VerletCloth& b, const std::string& p) {
+    eq_bits(c, a.vertices, b.vertices, p + ".vertices"); eq_bits(c, a.vertices2, b.vertices2, p + ".vertices2");
+    eq_bits(c, a.edges, b.edges, p + ".edges"); eq_bits(c, a.custom_edges, b.custom_edges, p + ".custom_edges");
+    compare_bound_ptr(c, a.bound, b.bound, p + ".bound");
+    c.eqv(a.bbox_min, b.bbox_min, p + ".bbox_min"); c.eqv(a.bbox_max, b.bbox_max, p + ".bbox_max"); c.eq(a.unk3C, b.unk3C, p + ".unk3C"); c.eq(a.unk4C, b.unk4C, p + ".unk4C");
+    c.eqf(a.unkA8, b.unkA8, p + ".unkA8"); c.eqf(a.unkAC, b.unkAC, p + ".unkAC"); c.eq(a.unkE8, b.unkE8, p + ".unkE8");
+    c.eq(a.unkFA, b.unkFA, p + ".unkFA"); c.eq(a.unk148, b.unk148, p + ".unk148"); c.eqf(a.unk158, b.unk158, p + ".unk158");
+}
+static void compare_cloth_controller(Cmp& c, const ClothController& a, const ClothController& b, const std::string& p) {
+    c.eq(a.name, b.name, p + ".name"); c.eq(a.type, b.type, p + ".type"); c.eqf(a.unk78, b.unk78, p + ".unk78");
+    c.eq(a.bridge.has_value(), b.bridge.has_value(), p + ".has_bridge");
+    if (a.bridge && b.bridge) {
+        auto& x = *a.bridge; auto& y = *b.bridge;
+        for (int l = 0; l < kClothLods; l++) {
+            std::string lp = p + ".bridge.lod" + std::to_string(l);
+            c.eq(x.vertex_counts[l], y.vertex_counts[l], lp + ".vertex_count");
+            eq_bits(c, x.unk20[l], y.unk20[l], lp + ".unk20"); eq_bits(c, x.unk60[l], y.unk60[l], lp + ".unk60");
+            eq_bits(c, x.unkA0[l], y.unkA0[l], lp + ".unkA0"); eq_bits(c, x.vertex_maps[l], y.vertex_maps[l], lp + ".vertex_map");
+        }
+        eq_bits(c, x.vertex_bits, y.vertex_bits, p + ".bridge.vertex_bits"); c.eq(x.bit_count, y.bit_count, p + ".bridge.bit_count");
+    }
+    c.eq(a.morph.has_value(), b.morph.has_value(), p + ".has_morph");
+    if (a.morph && b.morph)
+        for (int l = 0; l < kClothLods; l++) {
+            auto& x = a.morph->maps[l]; auto& y = b.morph->maps[l];
+            std::string mp = p + ".morph" + std::to_string(l);
+            c.eq(x.has_value(), y.has_value(), mp + ".present");
+            if (!x || !y) continue;
+            eq_bits(c, x->unk50, y->unk50, mp + ".unk50"); eq_bits(c, x->unkA0, y->unkA0, mp + ".unkA0");
+            for (int i = 0; i < 4; i++) { eq_bits(c, x->unk60[i], y->unk60[i], mp + ".unk60"); eq_bits(c, x->unkB0[i], y->unkB0[i], mp + ".unkB0"); }
+            eq_bits(c, x->unk150, y->unk150, mp + ".unk150"); eq_bits(c, x->unk160, y->unk160, mp + ".unk160"); c.eq(x->unk180, y->unk180, mp + ".unk180");
+        }
+    for (int l = 0; l < kClothLods; l++) {
+        c.eq(a.verlet[l].has_value(), b.verlet[l].has_value(), p + ".verlet" + std::to_string(l) + ".present");
+        if (a.verlet[l] && b.verlet[l]) compare_verlet(c, *a.verlet[l], *b.verlet[l], p + ".verlet" + std::to_string(l));
+    }
+}
+static void compare_character_cloth(Cmp& c, const CharacterCloth& a, const CharacterCloth& b, const std::string& p) {
+    c.eq(a.controller.has_value(), b.controller.has_value(), p + ".has_controller");
+    if (a.controller && b.controller) {
+        auto& x = *a.controller; auto& y = *b.controller;
+        compare_cloth_controller(c, x, y, p + ".controller");
+        eq_bits(c, x.indices, y.indices, p + ".indices"); eq_bits(c, x.vertices, y.vertices, p + ".vertices");
+        eq_bits(c, x.bone_weights, y.bone_weights, p + ".bone_weights"); eq_bits(c, x.bone_ids, y.bone_ids, p + ".controller.bone_ids");
+        eq_bits(c, x.unkB0, y.unkB0, p + ".unkB0"); c.eqf(x.unkA0, y.unkA0, p + ".unkA0"); c.eqf(x.unkDC, y.unkDC, p + ".unkDC");
+    }
+    compare_bound_ptr(c, a.bound, b.bound, p + ".bound");
+    eq_bits(c, a.bone_ids, b.bone_ids, p + ".bone_ids");
+    for (int k = 0; k < 16; k++) c.eqf(a.transform.m[k], b.transform.m[k], p + ".transform");
+    eq_bits(c, a.unk10, b.unk10, p + ".unk10"); eq_bits(c, a.unk90, b.unk90, p + ".unk90");
+}
+static void compare_environment_cloth(Cmp& c, const EnvironmentCloth& a, const EnvironmentCloth& b, const std::string& p) {
+    c.eq(a.controller.has_value(), b.controller.has_value(), p + ".has_controller");
+    if (a.controller && b.controller) compare_cloth_controller(c, *a.controller, *b.controller, p + ".controller");
+    c.eq(a.tuning.has_value(), b.tuning.has_value(), p + ".has_tuning");
+    if (a.tuning && b.tuning) {
+        auto& x = *a.tuning; auto& y = *b.tuning;
+        c.eqf(x.unk10, y.unk10, p + ".tuning.unk10"); c.eqf(x.unk14, y.unk14, p + ".tuning.unk14"); c.eqf(x.unk20, y.unk20, p + ".tuning.unk20");
+        c.eqf(x.unk24, y.unk24, p + ".tuning.unk24"); c.eqf(x.unk28, y.unk28, p + ".tuning.unk28"); c.eqf(x.unk2C, y.unk2C, p + ".tuning.unk2C");
+        c.eq(x.flags, y.flags, p + ".tuning.flags"); c.eqf(x.unk34, y.unk34, p + ".tuning.unk34"); c.eqf(x.unk38, y.unk38, p + ".tuning.unk38"); c.eq(x.unk3C, y.unk3C, p + ".tuning.unk3C");
+    }
+    eq_bits(c, a.unk60, b.unk60, p + ".unk60"); c.eq(a.unk78, b.unk78, p + ".unk78");
 }
 
 // Generic meta layer: structure/enum infos and every data block must come back identical.
@@ -531,6 +612,47 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
                 c.eq(a.hashes[order[i]], b.hashes[i], "ydd.hash");
                 compare_drawable(c, a.drawables[order[i]], b.drawables[i], "ydd[" + hash_name(a.hashes[order[i]]) + "]");
             }
+        } else if (ext == ".yld") {
+            auto a = read_yld(file); Bytes w = write_yld(a); mix(w); out_size = w.size();
+            if (rsc::Resource::load(w).version != rsc::kYld) c.fail("yld: written version");
+            auto b = read_yld(w);
+            c.eq(a.cloths.size(), b.cloths.size(), "yld.count");
+            std::vector<size_t> order(a.cloths.size());
+            for (size_t i = 0; i < order.size(); i++) order[i] = i;
+            std::stable_sort(order.begin(), order.end(), [&](size_t x, size_t y) { return a.hashes[x] < a.hashes[y]; });
+            for (size_t i = 0; i < order.size() && i < b.cloths.size(); i++) {
+                c.eq(a.hashes[order[i]], b.hashes[i], "yld.hash");
+                compare_character_cloth(c, a.cloths[order[i]], b.cloths[i], "yld[" + hash_name(a.hashes[order[i]]) + "]");
+            }
+        } else if (ext == ".yft") {
+            // the environment cloth: read from the fragment, written into a resource of its own, read back
+            rsc::Resource res = rsc::Resource::load(file);
+            Reader r(res);
+            const uint64_t root = rsc::kSystemBase;
+            const auto ptrs = r.array<uint64_t>(r.u64(root + 0x60), r.u16(root + 0x68));
+            if (ptrs.empty()) { g_untested = true; return true; }
+            const uint64_t want_drawable = r.u64(root + 0xF8) ? r.u64(root + 0xF8) : r.u64(root + 0x30);
+            const Fragment f = read_yft(file);
+            c.eq(f.cloths.size(), ptrs.size(), "yft.cloths.count");
+            for (size_t i = 0; i < ptrs.size(); i++) {
+                const std::string cp = "cloth[" + std::to_string(i) + "]";
+                uint64_t drawable = 0;
+                const EnvironmentCloth a = read_environment_cloth(r, ptrs[i], &drawable);
+                if (drawable != want_drawable) c.fail(cp + ": draws through neither drawable_cloth nor drawable");
+                if (i < f.cloths.size()) compare_environment_cloth(c, a, f.cloths[i], cp + " (read_yft)");
+                Builder b;
+                const BlockId top = b.alloc(Segment::System, 0x20);
+                b.pointer(top, 8, b.alloc_pages_info());
+                const BlockId dblk = b.alloc(Segment::System, 0x10);
+                b.pointer(top, 0x10, write_environment_cloth(b, a, dblk));
+                const Bytes w = b.build(rsc::kYft); mix(w); out_size += w.size();
+                const rsc::Resource res2 = rsc::Resource::load(w);
+                const Reader r2(res2);
+                uint64_t drawable2 = 0;
+                const EnvironmentCloth e2 = read_environment_cloth(r2, r2.u64(root + 0x10), &drawable2);
+                if (drawable2 != b.position(dblk)) c.fail(cp + ": drawable pointer");
+                compare_environment_cloth(c, a, e2, cp);
+            }
         } else if (ext == ".ymt") {
             // RSC7 .ymt (ped variation infos, clothing, vehicle metadata ...) are plain Meta files: generic layer only
             Meta a = read_meta(file); Bytes w = write_meta(a); mix(w); out_size = w.size(); Meta b = read_meta(w);
@@ -571,8 +693,11 @@ static bool test_file(const fs::path& path) {
 
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
-           ext == ".meta" || ext == ".xml";
+           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft";
 }
+
+// A file test_bytes had nothing to test in is not counted.
+static bool counted() { bool c = !g_untested; g_untested = false; return c; }
 
 static std::map<std::string, uint64_t> g_recorded, g_written;
 static int g_changed = 0;
@@ -625,6 +750,7 @@ int main(int argc, char** argv) {
             Bytes bytes;
             try { bytes = gi.extract(f); } catch (const std::exception& e) { std::printf("FAIL  %-60s  extract: %s\n", label.c_str(), e.what()); failed++; continue; }
             if (!test_bytes(label, ext, bytes)) failed++;
+            if (!counted()) total--;
             note_digest(label);
         }
     }
@@ -634,9 +760,10 @@ int main(int argc, char** argv) {
                 if (!e.is_regular_file() || !wanted(lower(e.path().extension().string()))) continue;
                 total++;
                 if (!test_file(e.path())) failed++;
+                if (!counted()) total--;
                 note_digest(e.path().filename().string());
             }
-        } else { total++; if (!test_file(p)) failed++; note_digest(p.filename().string()); }
+        } else { total++; if (!test_file(p)) failed++; if (!counted()) total--; note_digest(p.filename().string()); }
     }
     if (!record.empty()) {
         std::ofstream out(record);

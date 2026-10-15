@@ -27,7 +27,8 @@ third_party/miniz  deflate (public domain)
 | .ytd textures | yes | yes | every DXT/BC/uncompressed format decoded to RGBA; DXT1/5, BC4/5 and uncompressed encoded; DDS and PNG |
 | .ydr drawables, .ydd dictionaries | yes | yes | shaders, textures, skeleton, joints, LODs, lights, embedded collision |
 | .ybn collision | yes | yes | every bound type, BVH read and build, meshes from triangles |
-| .yft fragments | yes | no | drawable, physics LODs, groups, children, archetypes, glass |
+| .yft fragments | yes | no | drawable, physics LODs, groups, children, archetypes, glass, cloth (its writer is ready for a fragment writer) |
+| .yld cloth dictionaries | yes | yes | the simulated cloth of peds' clothing: verlet meshes, skinning, collision capsules |
 | .ytyp / .ymap | yes | yes | typed archetypes (interiors with rooms, portals, entity sets), entities, MLO instances, car generators, occluders; a lossless generic meta layer under them |
 | PSO (binary .ymt, .ypdb, .ymf) | yes | yes | byte for byte; a schema-driven walker; typed streaming manifests |
 | RBF (creature metadata .ymt ...) | yes | yes | byte for byte: the expressions of clothing components and props, cutscene and Bink metadata |
@@ -114,7 +115,7 @@ rsc::write_file("prop_copy.ydr", write_ydr(d));
 
 ## How it is checked
 
-Against the game's own files and against CodeWalker. A sample of 4,860 files of the install (every 50th resource,
+Against the game's own files and against CodeWalker. A sample of 4,958 files of the install (every 50th resource,
 PSO and audio file) is read, written and read again, and every one compares equal field for field; a digest of what
 is written holds every rewrite to the bytes the code wrote before. CodeWalker loads what ragekit writes: drawables,
 texture dictionaries and collision with the same summary as the originals, map files with the same summary and the
@@ -123,7 +124,7 @@ same CodeWalker XML. These tests do not run the game itself. See [docs/testing.m
 ## Not done yet
 
 - Writing NG-encrypted archives.
-- Writing fragments (.yft), and cloth.
+- Writing fragments (.yft).
 - Typed models for the common PSO files (carcols, carvariations, peds ...).
 - GTA V Enhanced (the gen9 formats).
 - Animations (.ycd), navmeshes, path nodes and the other formats [docs/codewalker-comparison.md](docs/codewalker-comparison.md)

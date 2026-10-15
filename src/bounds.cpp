@@ -261,7 +261,8 @@ std::shared_ptr<Bound> read_bound(const Reader& r, uint64_t ptr) {
     switch (b->type) {
         case BoundType::Geometry: case BoundType::GeometryBVH: read_geometry(r, ptr, *b); break;
         case BoundType::Composite: read_composite(r, ptr, *b); break;
-        default: break; // sphere, capsule, box, disc, cylinder, cloth: the base struct holds everything
+        case BoundType::Capsule: case BoundType::Disc: case BoundType::Cylinder: b->unk70 = r.f32(ptr + 0x70); break;
+        default: break; // sphere, box, cloth: the base struct holds everything
     }
     return b;
 }
@@ -286,6 +287,7 @@ constexpr uint32_t vft_of(BoundType t) {
         case BoundType::Composite: return 1080212136u;
         case BoundType::Disc: return 1080229960u;
         case BoundType::Cylinder: return 1080202872u;
+        case BoundType::Cloth: return 1080229448u;
         default: return 1080226408u;
     }
 }
@@ -349,6 +351,7 @@ BlockId write_bound(Builder& b, const Bound& bound) {
     w.u16(bound.unk5E);
     w.vec3(bound.inertia);
     w.f32(bound.volume);
+    if (bound_size(bound.type) == 128) w.f32(bound.unk70);
 
     if ((bound.type == BoundType::Geometry || bound.type == BoundType::GeometryBVH) && bound.geometry) {
         auto& g = *bound.geometry;

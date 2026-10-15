@@ -8,6 +8,7 @@
 #include <vector>
 #include "drawable.h"
 #include "bounds.h"
+#include "cloth.h"
 
 namespace rk {
 
@@ -76,6 +77,7 @@ struct Fragment {
     std::optional<FragDrawable> drawable_cloth;
     Bytes vehicle_glass_windows;                           // raw block, "VGWH"
     std::vector<Light> lights;
+    std::vector<EnvironmentCloth> cloths;                  // each draws through drawable_cloth if set, else drawable
     size_t cloth_count = 0;
     int32_t unkB0 = 0, unkB8 = 0, unkBC = 0, unkC0 = 0, unkC4 = 0;
     float unkCC = 0, gravity_factor = 1, buoyancy_factor = 1;
