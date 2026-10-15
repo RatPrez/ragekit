@@ -1,0 +1,10 @@
+build/
+*.obj
+*.o
+*.a
+*.exe
+.cache/
+tests/oracle/bin/
+tests/oracle/obj/
+gtav_*.dat
+magic.dat

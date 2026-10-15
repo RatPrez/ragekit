@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    oracle: loads files written by ragekit with CodeWalker's own parser (the independent check),
+    and converts CodeWalker XML (.ytyp.xml / .ymap.xml) to binary.
+    Needs CodeWalker.Core (https://github.com/dexyfex/CodeWalker): -p:CodeWalkerCore=path\to\CodeWalker.Core.csproj
+      dotnet run -c Release - - file.ydr file.ybn file.ytyp.xml
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CodeWalkerCore Condition="'$(CodeWalkerCore)' == ''">$(MSBuildThisFileDirectory)..\..\..\rat-tooling\shared\vendor\CodeWalker.Core\CodeWalker.Core.csproj</CodeWalkerCore>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(CodeWalkerCore)" />
+  </ItemGroup>
+</Project>

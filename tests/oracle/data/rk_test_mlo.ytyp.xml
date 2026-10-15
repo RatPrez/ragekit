@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CMapTypes>
+ <extensions />
+ <archetypes>
+  <Item type="CMloArchetypeDef">
+   <lodDist value="60" />
+   <flags value="0" />
+   <specialAttribute value="0" />
+   <bbMin x="-5" y="-5" z="-1" />
+   <bbMax x="5" y="5" z="3" />
+   <bsCentre x="0" y="0" z="1" />
+   <bsRadius value="8.125" />
+   <hdTextureDist value="5" />
+   <name>rk_test_mlo</name>
+   <textureDictionary />
+   <clipDictionary />
+   <drawableDictionary />
+   <physicsDictionary />
+   <assetType>ASSET_TYPE_ASSETLESS</assetType>
+   <assetName>rk_test_mlo</assetName>
+   <extensions />
+   <mloFlags value="0" />
+   <entities>
+    <Item type="CEntityDef">
+     <archetypeName>prop_cs_cardbox_01</archetypeName>
+     <flags value="32" />
+     <guid value="0" />
+     <position x="1.5" y="2.25" z="0.5" />
+     <rotation x="0" y="0" z="0" w="1" />
+     <scaleXY value="1" />
+     <scaleZ value="1" />
+     <parentIndex value="-1" />
+     <lodDist value="100" />
+     <childLodDist value="0" />
+     <lodLevel>LODTYPES_DEPTH_ORPHANHD</lodLevel>
+     <numChildren value="0" />
+     <priorityLevel>PRI_REQUIRED</priorityLevel>
+     <extensions />
+     <ambientOcclusionMultiplier value="255" />
+     <artificialAmbientOcclusion value="255" />
+     <tintValue value="0" />
+    </Item>
+   </entities>
+   <rooms itemType="CMloRoomDef">
+    <Item>
+     <name>limbo</name>
+     <bbMin x="-5" y="-5" z="-1" />
+     <bbMax x="5" y="5" z="3" />
+     <blend value="1" />
+     <timecycleName />
+     <secondaryTimecycleName />
+     <flags value="96" />
+     <portalCount value="1" />
+     <floorId value="0" />
+     <exteriorVisibiltyDepth value="-1" />
+     <attachedObjects />
+    </Item>
+    <Item>
+     <name>room_a</name>
+     <bbMin x="-4" y="-4" z="-1" />
+     <bbMax x="4" y="4" z="3" />
+     <blend value="1" />
+     <timecycleName>int_nomul</timecycleName>
+     <secondaryTimecycleName />
+     <flags value="96" />
+     <portalCount value="1" />
+     <floorId value="0" />
+     <exteriorVisibiltyDepth value="-1" />
+     <attachedObjects>0</attachedObjects>
+    </Item>
+   </rooms>
+   <portals itemType="CMloPortalDef">
+    <Item>
+     <roomFrom value="1" />
+     <roomTo value="0" />
+     <flags value="0" />
+     <mirrorPriority value="0" />
+     <opacity value="0" />
+     <audioOcclusion value="0" />
+     <corners>
+      <Item>-1, -4, -1, 0</Item>
+      <Item>-1, -4, 2, 0</Item>
+      <Item>1, -4, 2, 0</Item>
+      <Item>1, -4, -1, 0</Item>
+     </corners>
+     <attachedObjects />
+    </Item>
+   </portals>
+   <entitySets itemType="CMloEntitySet" />
+   <timeCycleModifiers itemType="CMloTimeCycleModifier" />
+  </Item>
+ </archetypes>
+ <name>rk_test_mlo</name>
+ <dependencies />
+ <compositeEntityTypes itemType="CCompositeEntityType" />
+</CMapTypes>
