@@ -12,6 +12,7 @@
 #include "meta.h"
 #include "map.h"
 #include "pso.h"
+#include "rbf.h"
 #include "manifest.h"
 #include "gltf.h"
 #include "xml.h"

@@ -416,6 +416,22 @@ static bool test_rel(const std::string& label, const Bytes& file) {
 static bool test_bytes(const std::string& label, const std::string& ext, const Bytes& file) {
     g_digest = 0;
     if (ext == ".rel") return test_rel(label, file);
+    if (is_rbf(file)) {
+        // RBF (creature metadata, cutscene / Bink metadata): read -> write must give the identical bytes
+        try {
+            Bytes w = write_rbf(read_rbf(file)); mix(w);
+            if (w != file) {
+                size_t i = 0; while (i < w.size() && i < file.size() && w[i] == file[i]) i++;
+                std::printf("DIFF  %-60s  RBF bytes differ at %zu (in %zu, out %zu)\n", label.c_str(), i, file.size(), w.size());
+                return false;
+            }
+        } catch (const std::exception& e) {
+            std::printf("FAIL  %-60s  %s\n", label.c_str(), e.what());
+            return false;
+        }
+        std::printf("ok    %-60s  %zu bytes, RBF\n", label.c_str(), file.size());
+        return true;
+    }
     bool pso = is_pso(file) && (ext == ".ymt" || ext == ".ypdb" || ext == ".ymf");
     if (!pso && !rsc::Resource::is_resource(file)) return true;
     Cmp c;

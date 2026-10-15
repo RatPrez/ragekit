@@ -239,6 +239,10 @@ static int cmd_fxc(const std::string& path) {
 
 static int cmd_info(const std::string& path, bool verbose) {
     Bytes file = rsc::read_file(path);
+    if (is_rbf(file)) {   // creature metadata .ymt, cutscene / Bink metadata ...
+        std::printf("RBF: %zu bytes\n%s", file.size(), rbf_dump(read_rbf(file)).c_str());
+        return 0;
+    }
     if (is_pso(file)) { // binary .ymt / .ypdb ...
         Pso p = read_pso(file);
         std::printf("PSO: %zu bytes\n%s", file.size(), pso_describe(p, verbose).c_str());

@@ -30,6 +30,7 @@ third_party/miniz  deflate (public domain)
 | .yft fragments | yes | no | drawable, physics LODs, groups, children, archetypes, glass |
 | .ytyp / .ymap | yes | yes | typed archetypes (interiors with rooms, portals, entity sets), entities, MLO instances, car generators, occluders; a lossless generic meta layer under them |
 | PSO (binary .ymt, .ypdb, .ymf) | yes | yes | byte for byte; a schema-driven walker; typed streaming manifests |
+| RBF (creature metadata .ymt ...) | yes | yes | byte for byte: the expressions of clothing components and props, cutscene and Bink metadata |
 | .rel audio data | yes | yes | byte for byte; the dat151 items an interior needs; interior audio occlusion files |
 | RPF7 archives | yes | yes | AES, NG, OPEN and plain; nested archives; writes plain, OPEN and AES |
 | CodeWalker XML | no | yes | what CodeWalker's "Export XML" writes for .ydr/.ydd/.ybn/.ytd, which CodeWalker and Sollumz import |
@@ -103,7 +104,7 @@ rsc::write_file("prop_copy.ydr", write_ydr(d));
 - [RSC7 resources](docs/resources.md): the container, page flags, building resources, the page layout
 - [Models, textures and collision](docs/models-and-textures.md): ytd, ydr, ydd, ybn, yft, CodeWalker XML, glTF
 - [Map files](docs/maps.md): the meta container, ytyp and ymap, occluders
-- [PSO, manifests and audio data](docs/pso-and-audio.md): PSO files, `_manifest.ymf`, `.rel`, interior audio
+- [PSO, RBF, manifests and audio data](docs/pso-and-audio.md): PSO and RBF files, `_manifest.ymf`, `.rel`, interior audio
 - [RPF archives](docs/archives.md): reading, keys, writing
 - [The game index and the world index](docs/game-index.md)
 - [The rk tool](docs/rk-tool.md)

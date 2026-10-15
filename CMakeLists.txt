@@ -33,6 +33,7 @@ add_library(ragekit STATIC
     src/map.cpp
     src/occluder.cpp
     src/pso.cpp
+    src/rbf.cpp
     src/pso_view.cpp
     src/manifest.cpp
     src/rel.cpp
