@@ -21,7 +21,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | .ytd texture dictionary | yes + XML/DDS | **yes** + DDS/PNG; decodes every DXT/BC/uncompressed format; encodes DXT1/5, BC4/5 and uncompressed; mips; **XML export** | BC7/BC6H encode; XML import |
 | .ydr drawable | yes + XML | **yes** (shaders and parameters, textures, skeleton, joints, LODs, lights, embedded bounds); **XML export**; the shader database names every parameter | XML import |
 | .ydd drawable dictionary | yes + XML | **yes**; XML export | XML import |
-| .yft fragment | yes + XML | **read** (drawable, physics LODs, groups, children, archetypes, glass, environment cloth); the cloth also writes (`src/cloth_io.h`), and all 1,828 game fragments with cloth round-trip it | writer; XML |
+| .yft fragment | yes + XML | **yes** (drawables, physics LODs with groups, children, archetypes, bounds and joints, glass, vehicle glass, lights, environment cloth; every tenth game file round-trips field for field) | XML |
 | .ybn collision | yes + XML | **yes** (every bound type, BVH read and build, geometry builder, materials with room id); XML export | XML import; ragekit builds its own BVH trees |
 | .ycd clip dictionary (animations) | yes + XML | - | everything: clips, animations, channel packing, sequences |
 | .ynv navmesh | yes + XML + builder | - | everything |
@@ -70,7 +70,6 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 ## Next for ragekit
 
 1. Writing NG-encrypted archives.
-2. Fragments (`.yft`): writing.
-3. Typed models for the common PSO files (carcols, carvariations, peds ...).
-4. GTA V Enhanced (the gen9 formats).
-5. Animations (`.ycd`), and the smaller formats people ask for (`.gxt2`, `.awc`).
+2. Typed models for the common PSO files (carcols, carvariations, peds ...).
+3. GTA V Enhanced (the gen9 formats).
+4. Animations (`.ycd`), and the smaller formats people ask for (`.gxt2`, `.awc`).

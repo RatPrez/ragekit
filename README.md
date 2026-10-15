@@ -27,7 +27,7 @@ third_party/miniz  deflate (public domain)
 | .ytd textures | yes | yes | every DXT/BC/uncompressed format decoded to RGBA; DXT1/5, BC4/5 and uncompressed encoded; DDS and PNG |
 | .ydr drawables, .ydd dictionaries | yes | yes | shaders, textures, skeleton, joints, LODs, lights, embedded collision |
 | .ybn collision | yes | yes | every bound type, BVH read and build, meshes from triangles |
-| .yft fragments | yes | no | drawable, physics LODs, groups, children, archetypes, glass, cloth (its writer is ready for a fragment writer) |
+| .yft fragments | yes | yes | vehicles, props, ped ragdolls: drawables, physics LODs (groups, children, archetypes, bounds, joints), glass, vehicle glass, lights, cloth |
 | .yld cloth dictionaries | yes | yes | the simulated cloth of peds' clothing: verlet meshes, skinning, collision capsules |
 | .ytyp / .ymap | yes | yes | typed archetypes (interiors with rooms, portals, entity sets), entities, MLO instances, car generators, occluders; a lossless generic meta layer under them |
 | PSO (binary .ymt, .ypdb, .ymf) | yes | yes | byte for byte; a schema-driven walker; typed streaming manifests |
@@ -124,7 +124,6 @@ same CodeWalker XML. These tests do not run the game itself. See [docs/testing.m
 ## Not done yet
 
 - Writing NG-encrypted archives.
-- Writing fragments (.yft).
 - Typed models for the common PSO files (carcols, carvariations, peds ...).
 - GTA V Enhanced (the gen9 formats).
 - Animations (.ycd), navmeshes, path nodes and the other formats [docs/codewalker-comparison.md](docs/codewalker-comparison.md)

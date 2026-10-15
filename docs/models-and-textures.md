@@ -7,7 +7,7 @@
 | `.ydd` drawable dictionary | `drawable.h` | yes | yes |
 | `.ybn` collision | `bounds.h` | yes | yes |
 | `.yld` cloth dictionary | `cloth.h` | yes | yes |
-| `.yft` fragment | `fragment.h` | yes (with its cloth) | no (its cloth: yes) |
+| `.yft` fragment | `fragment.h` | yes | yes |
 
 ## Textures
 
@@ -66,6 +66,27 @@ Every bound type reads and writes: composites, geometries with and without a BVH
 cylinders, discs. `Bound::finalize` recomputes what is derived (boxes, sphere, quantum, edges, materials table, shrunk
 vertices, octants, BVH) after an edit. Materials carry the room id an interior's collision needs.
 
+## Fragments
+
+A `.yft` is a vehicle, a breakable prop or a ped's ragdoll: a drawable (some also have a list of further drawables and a
+cloth drawable) and physics in up to three LODs. Each LOD has groups (the breakable parts: name, strength, mass),
+children (the pieces, each with a pristine and a damaged drawable and an event set), archetypes (mass, inertia, the
+collision bound), a transform per child and, for ragdolls, an articulated body of joints. The fragment also carries its
+glass windows, the vehicle glass shatter maps, lights, bone transforms and cloth.
+
+```cpp
+Fragment f = read_yft(rsc::read_file("adder.yft"));
+for (const FragGroup& g : f.physics[0]->groups)            // wheels, doors, bonnet ...
+    std::printf("%s %.1f kg\n", g.name().c_str(), g.mass());
+rsc::write_file("adder.yft", write_yft(f));
+```
+
+The physics structures keep their bytes as read (`raw`, with the pointers in them cleared) under their typed members, so
+`write_yft` writes back what ragekit does not model; blocks the game shares stay shared (an archetype's bound and its
+LOD's). Every tenth of the install's 61,430 `.yft` reads back field for field after `write_yft`. Walking those and their
+rewrites by offset, every byte that is not a pointer or a vtable matches and every pointer is null in the same places,
+and CodeWalker reads 615 rewritten fragments exactly as it reads the originals.
+
 ## Cloth
 
 A `.yld` is a cloth dictionary (RSC7 version 8) of character cloth, the parts of a ped's clothing the game simulates,
@@ -89,8 +110,8 @@ three LODs (vertices, edge constraints and, for environment cloth, a collision b
 environment cloth, a morph controller between the LODs. A character cloth adds the skinning (vertices, triangles, bone
 weights, bone ids) and a bound of capsules with one bone id per capsule; an environment cloth may add an instance
 tuning. Unknown fields that vary are kept as `unk*` members named after their offset; the rest are zero or constant in
-every game file and are written as they are found. A fragment writer embeds environment cloth with
-`write_environment_cloth` (`src/cloth_io.h`), passing the block of the fragment drawable the cloth draws through.
+every game file and are written as they are found. `write_yft` writes a fragment's cloth, drawn through its
+`drawable_cloth` when it has one, else its `drawable`.
 
 What the game's files show:
 

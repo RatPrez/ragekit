@@ -259,6 +259,100 @@ static void compare_environment_cloth(Cmp& c, const EnvironmentCloth& a, const E
     eq_bits(c, a.unk60, b.unk60, p + ".unk60"); c.eq(a.unk78, b.unk78, p + ".unk78");
 }
 
+// Fragments: every field, every raw byte, every drawable, bound and cloth.
+template <class T> static void eq_mem(Cmp& c, const T& a, const T& b, const std::string& p) {
+    if (std::memcmp(&a, &b, sizeof(T)) != 0) c.fail(p);
+}
+static void compare_frag_drawable(Cmp& c, const FragDrawable& a, const FragDrawable& b, const std::string& p) {
+    compare_drawable(c, a, b, p);
+    eq_mem(c, a.frag_matrix, b.frag_matrix, p + ".frag_matrix");
+    c.eq(a.frag_matrices_inds, b.frag_matrices_inds, p + ".frag_matrices_inds");
+    c.eq(a.frag_matrices.size(), b.frag_matrices.size(), p + ".frag_matrices.count");
+    for (size_t i = 0; i < a.frag_matrices.size() && i < b.frag_matrices.size(); i++) eq_mem(c, a.frag_matrices[i], b.frag_matrices[i], p + ".frag_matrices");
+    c.eq(a.frag_matrices_count, b.frag_matrices_count, p + ".frag_matrices_count");
+    compare_bound_ptr(c, a.bound, b.bound, p + ".bound");
+}
+static void compare_opt_frag_drawable(Cmp& c, const std::optional<FragDrawable>& a, const std::optional<FragDrawable>& b, const std::string& p) {
+    c.eq(a.has_value(), b.has_value(), p + ".present");
+    if (a && b) compare_frag_drawable(c, *a, *b, p);
+}
+static void compare_lod(Cmp& c, const FragPhysicsLod& a, const FragPhysicsLod& b, const std::string& p) {
+    eq_mem(c, a.raw, b.raw, p + ".raw");
+    c.eq(a.groups.size(), b.groups.size(), p + ".groups.count");
+    for (size_t i = 0; i < a.groups.size() && i < b.groups.size(); i++) eq_mem(c, a.groups[i].raw, b.groups[i].raw, p + ".group");
+    c.eq(a.children.size(), b.children.size(), p + ".children.count");
+    for (size_t i = 0; i < a.children.size() && i < b.children.size(); i++) {
+        auto& x = a.children[i]; auto& y = b.children[i];
+        const std::string cp = p + ".child[" + std::to_string(i) + "]";
+        eq_mem(c, x.raw, y.raw, cp + ".raw");
+        c.eqf(x.pristine_mass, y.pristine_mass, cp + ".pristine_mass"); c.eqf(x.damaged_mass, y.damaged_mass, cp + ".damaged_mass");
+        c.eq(x.group_index, y.group_index, cp + ".group_index"); c.eq(x.bone_tag, y.bone_tag, cp + ".bone_tag");
+        compare_opt_frag_drawable(c, x.drawable, y.drawable, cp + ".drawable");
+        compare_opt_frag_drawable(c, x.drawable_damaged, y.drawable_damaged, cp + ".damaged");
+        c.eq(x.event_set.has_value(), y.event_set.has_value(), cp + ".has_event_set");
+        if (x.event_set && y.event_set) eq_mem(c, *x.event_set, *y.event_set, cp + ".event_set");
+        eq_mem(c, x.unk_float, y.unk_float, cp + ".unk_float"); eq_mem(c, x.unk_vec, y.unk_vec, cp + ".unk_vec"); eq_mem(c, x.inertia_tensor, y.inertia_tensor, cp + ".inertia");
+    }
+    for (int k = 0; k < 2; k++) {
+        auto& x = k ? a.archetype_damaged : a.archetype; auto& y = k ? b.archetype_damaged : b.archetype;
+        const std::string ap = p + (k ? ".archetype_damaged" : ".archetype");
+        c.eq(x.has_value(), y.has_value(), ap + ".present");
+        if (x && y) { eq_mem(c, x->raw, y->raw, ap + ".raw"); c.eq(x->name, y->name, ap + ".name"); compare_bound_ptr(c, x->bound, y->bound, ap + ".bound"); }
+    }
+    compare_bound_ptr(c, a.bound, b.bound, p + ".bound");
+    c.eq(a.archetype && a.bound && a.archetype->bound == a.bound, b.archetype && b.bound && b.archetype->bound == b.bound, p + ".bound shared with the archetype's");
+    c.eq(a.transforms.size(), b.transforms.size(), p + ".transforms.count");
+    for (size_t i = 0; i < a.transforms.size() && i < b.transforms.size(); i++) eq_mem(c, a.transforms[i], b.transforms[i], p + ".transform");
+    c.eq(a.articulated_body.has_value(), b.articulated_body.has_value(), p + ".has_articulated_body");
+    if (a.articulated_body && b.articulated_body) {
+        eq_mem(c, a.articulated_body->raw, b.articulated_body->raw, p + ".articulated.raw");
+        c.eq(a.articulated_body->joints, b.articulated_body->joints, p + ".articulated.joints");
+        c.eq(a.articulated_body->vectors.size(), b.articulated_body->vectors.size(), p + ".articulated.vectors.count");
+        if (a.articulated_body->vectors.size() == b.articulated_body->vectors.size() && !a.articulated_body->vectors.empty() &&
+            std::memcmp(a.articulated_body->vectors.data(), b.articulated_body->vectors.data(), a.articulated_body->vectors.size() * sizeof(Vec4)) != 0)
+            c.fail(p + ".articulated.vectors");
+    }
+    c.eq(a.unknown_data1, b.unknown_data1, p + ".unknown_data1"); c.eq(a.unknown_data2, b.unknown_data2, p + ".unknown_data2");
+}
+static void compare_fragment(Cmp& c, const Fragment& a, const Fragment& b) {
+    eq_mem(c, a.raw, b.raw, "yft.raw");
+    c.eq(a.name, b.name, "yft.name");
+    eq_mem(c, a.sphere_center, b.sphere_center, "yft.sphere_center"); eq_mem(c, a.sphere_radius, b.sphere_radius, "yft.sphere_radius");
+    compare_opt_frag_drawable(c, a.drawable, b.drawable, "yft.drawable");
+    c.eq(a.drawable_array.size(), b.drawable_array.size(), "yft.drawable_array.count");
+    for (size_t i = 0; i < a.drawable_array.size() && i < b.drawable_array.size(); i++) compare_frag_drawable(c, a.drawable_array[i], b.drawable_array[i], "yft.drawable_array");
+    c.eq(a.drawable_array_names, b.drawable_array_names, "yft.drawable_array_names");
+    c.eq(a.bone_transforms, b.bone_transforms, "yft.bone_transforms"); c.eq(a.bone_transforms_unk, b.bone_transforms_unk, "yft.bone_transforms_unk");
+    c.eq(a.glass_windows, b.glass_windows, "yft.glass_windows");
+    for (int i = 0; i < 3; i++) {
+        c.eq(a.physics[(size_t)i].has_value(), b.physics[(size_t)i].has_value(), "yft.physics.present");
+        if (a.physics[(size_t)i] && b.physics[(size_t)i]) compare_lod(c, *a.physics[(size_t)i], *b.physics[(size_t)i], "yft.lod" + std::to_string(i));
+    }
+    compare_opt_frag_drawable(c, a.drawable_cloth, b.drawable_cloth, "yft.drawable_cloth");
+    c.eq(a.vehicle_glass_windows, b.vehicle_glass_windows, "yft.vehicle_glass_windows");
+    Drawable la, lb;
+    la.lights = a.lights; lb.lights = b.lights;
+    compare_drawable(c, la, lb, "yft");
+    c.eq(a.cloths.size(), b.cloths.size(), "yft.cloths.count");
+    for (size_t i = 0; i < a.cloths.size() && i < b.cloths.size(); i++) compare_environment_cloth(c, a.cloths[i], b.cloths[i], "yft.cloth[" + std::to_string(i) + "]");
+    c.eq(a.unkB0, b.unkB0, "yft.unkB0"); c.eq(a.unkB8, b.unkB8, "yft.unkB8"); c.eq(a.unkBC, b.unkBC, "yft.unkBC"); c.eq(a.unkC0, b.unkC0, "yft.unkC0");
+    c.eq(a.unkC4, b.unkC4, "yft.unkC4"); eq_mem(c, a.unkCC, b.unkCC, "yft.unkCC"); eq_mem(c, a.gravity_factor, b.gravity_factor, "yft.gravity");
+    eq_mem(c, a.buoyancy_factor, b.buoyancy_factor, "yft.buoyancy");
+}
+
+// A fragment's cloth draws through its drawable_cloth when it has one, else through its drawable.
+static void check_cloth_drawables(Cmp& c, const Bytes& file, const std::string& p) {
+    rsc::Resource res = rsc::Resource::load(file);
+    Reader r(res);
+    const uint64_t root = rsc::kSystemBase;
+    const uint64_t want = r.u64(root + 0xF8) ? r.u64(root + 0xF8) : r.u64(root + 0x30);
+    for (uint64_t cp : r.array<uint64_t>(r.u64(root + 0x60), r.u16(root + 0x68))) {
+        uint64_t drawable = 0;
+        read_environment_cloth(r, cp, &drawable);
+        if (drawable != want) c.fail(p + ": a cloth draws through neither drawable_cloth nor drawable");
+    }
+}
+
 // Generic meta layer: structure/enum infos and every data block must come back identical.
 static void compare_meta(Cmp& c, const Meta& a, const Meta& b, const std::string& p) {
     c.eq(a.name, b.name, p + ".name");
@@ -625,34 +719,12 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
                 compare_character_cloth(c, a.cloths[order[i]], b.cloths[i], "yld[" + hash_name(a.hashes[order[i]]) + "]");
             }
         } else if (ext == ".yft") {
-            // the environment cloth: read from the fragment, written into a resource of its own, read back
-            rsc::Resource res = rsc::Resource::load(file);
-            Reader r(res);
-            const uint64_t root = rsc::kSystemBase;
-            const auto ptrs = r.array<uint64_t>(r.u64(root + 0x60), r.u16(root + 0x68));
-            if (ptrs.empty()) { g_untested = true; return true; }
-            const uint64_t want_drawable = r.u64(root + 0xF8) ? r.u64(root + 0xF8) : r.u64(root + 0x30);
-            const Fragment f = read_yft(file);
-            c.eq(f.cloths.size(), ptrs.size(), "yft.cloths.count");
-            for (size_t i = 0; i < ptrs.size(); i++) {
-                const std::string cp = "cloth[" + std::to_string(i) + "]";
-                uint64_t drawable = 0;
-                const EnvironmentCloth a = read_environment_cloth(r, ptrs[i], &drawable);
-                if (drawable != want_drawable) c.fail(cp + ": draws through neither drawable_cloth nor drawable");
-                if (i < f.cloths.size()) compare_environment_cloth(c, a, f.cloths[i], cp + " (read_yft)");
-                Builder b;
-                const BlockId top = b.alloc(Segment::System, 0x20);
-                b.pointer(top, 8, b.alloc_pages_info());
-                const BlockId dblk = b.alloc(Segment::System, 0x10);
-                b.pointer(top, 0x10, write_environment_cloth(b, a, dblk));
-                const Bytes w = b.build(rsc::kYft); mix(w); out_size += w.size();
-                const rsc::Resource res2 = rsc::Resource::load(w);
-                const Reader r2(res2);
-                uint64_t drawable2 = 0;
-                const EnvironmentCloth e2 = read_environment_cloth(r2, r2.u64(root + 0x10), &drawable2);
-                if (drawable2 != b.position(dblk)) c.fail(cp + ": drawable pointer");
-                compare_environment_cloth(c, a, e2, cp);
-            }
+            const Fragment a = read_yft(file);
+            Bytes w = write_yft(a); mix(w); out_size = w.size();
+            if (rsc::Resource::load(w).version != rsc::kYft) c.fail("yft: written version");
+            compare_fragment(c, a, read_yft(w));
+            check_cloth_drawables(c, file, "original");
+            check_cloth_drawables(c, w, "written");
         } else if (ext == ".ymt") {
             // RSC7 .ymt (ped variation infos, clothing, vehicle metadata ...) are plain Meta files: generic layer only
             Meta a = read_meta(file); Bytes w = write_meta(a); mix(w); out_size = w.size(); Meta b = read_meta(w);

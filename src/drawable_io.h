@@ -12,6 +12,8 @@ void read_drawable_base(const Reader& r, uint64_t ptr, Drawable& d);
 Drawable read_drawable(const Reader& r, uint64_t ptr);
 /// Reads one 168 byte light record.
 Light read_light_at(const Reader& r, uint64_t ptr);
+/// Writes one 168 byte light record at the writer's position.
+void write_light_at(BlockWriter& w, const Light& l);
 
 /// Blocks a drawable's base fields point at; produced by prepare_drawable.
 struct DrawableBlocks {

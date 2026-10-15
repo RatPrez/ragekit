@@ -1001,6 +1001,8 @@ void write_light(BlockWriter& w, const Light& l) {
 
 } // namespace
 
+void write_light_at(BlockWriter& w, const Light& l) { write_light(w, l); }
+
 DrawableBlocks prepare_drawable(Builder& b, const Drawable& d) {
     DrawableBlocks parts;
     if (d.shader_group) parts.shader_group = write_shader_group(b, *d.shader_group);

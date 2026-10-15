@@ -67,6 +67,22 @@ foreach (var path in args)
         {
             Console.Write("ok   " + Path.GetFileName(path) + ": " + Pair.Describe(path, out _));
         }
+        else if (lower.EndsWith(".yft"))
+        {
+            var f = RpfFile.GetResourceFile<YftFile>(data).Fragment;
+            string drw(DrawableBase d) => d == null ? "-" : $"{d.AllModels?.Length ?? 0} models {d.AllModels?.Sum(m => m.Geometries?.Length ?? 0) ?? 0} geoms {d.ShaderGroup?.Shaders?.data_items?.Length ?? 0} shaders";
+            Console.WriteLine($"ok   {Path.GetFileName(path)}: fragment '{f.Name}' sphere {f.BoundingSphereCenter} r {f.BoundingSphereRadius} drawable [{drw(f.Drawable)}] array {f.DrawableArray?.data_items?.Length ?? 0} cloth drawable [{drw(f.DrawableCloth)}]");
+            Console.WriteLine($"       glass {f.GlassWindows?.data_items?.Length ?? 0} vehicle glass {(f.VehicleGlassWindows != null ? f.VehicleGlassWindows.TotalLength : 0)} cloths {f.Cloths?.data_items?.Length ?? 0} lights {f.LightAttributes?.data_items?.Length ?? 0} bones {f.BoneTransforms?.Items?.Length ?? 0} gravity {f.GravityFactor} buoyancy {f.BuoyancyFactor}");
+            var lods = new[] { f.PhysicsLODGroup?.PhysicsLOD1, f.PhysicsLODGroup?.PhysicsLOD2, f.PhysicsLODGroup?.PhysicsLOD3 };
+            for (int l = 0; l < 3; l++)
+            {
+                var lod = lods[l];
+                if (lod == null) continue;
+                Console.WriteLine($"       lod{l}: groups {lod.Groups?.data_items?.Length ?? 0} children {lod.Children?.data_items?.Length ?? 0} joints {lod.ArticulatedBodyType?.Joints?.data_items?.Length ?? 0} transforms {lod.FragTransforms?.Matrices?.Length ?? 0} bound {lod.Bound?.Type} archetype '{lod.Archetype1?.Name}' {lod.Archetype1?.Mass} damaged '{lod.Archetype2?.Name}'");
+                if (lod.Groups?.data_items != null) foreach (var g in lod.Groups.data_items) Console.WriteLine($"         group {g.Name} parent {g.ParentIndex} children {g.ChildCount} mass {g.Mass} strength {g.Strength}");
+                if (lod.Children?.data_items != null) foreach (var c in lod.Children.data_items) Console.WriteLine($"         child group {c.GroupIndex} bone {c.BoneTag} mass {c.PristineMass}/{c.DamagedMass} drawable [{drw(c.Drawable1)}] damaged [{drw(c.Drawable2)}] events {(c.EvtSet != null ? 1 : 0)}");
+            }
+        }
         else if (lower.EndsWith(".ydr"))
         {
             var ydr = RpfFile.GetResourceFile<YdrFile>(data);

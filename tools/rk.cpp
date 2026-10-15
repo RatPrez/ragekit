@@ -108,7 +108,7 @@ static void print_bound(const Bound& b, int depth) {
 static void print_fragment(const Fragment& f, bool verbose) {
     std::printf("Fragment '%s'  sphere (%.3f %.3f %.3f) r %.3f  gravity %.2f buoyancy %.2f  %zu glass windows, %zu cloths, %zu lights\n", f.name.c_str(),
                 f.sphere_center.x, f.sphere_center.y, f.sphere_center.z, f.sphere_radius, f.gravity_factor, f.buoyancy_factor, f.glass_windows.size(),
-                f.cloth_count, f.lights.size());
+                f.cloths.size(), f.lights.size());
     if (f.drawable) { std::printf("Main "); print_drawable(*f.drawable, verbose); if (f.drawable->bound) print_bound(*f.drawable->bound, 1); }
     if (f.drawable_cloth) { std::printf("Cloth "); print_drawable(*f.drawable_cloth, verbose); }
     for (size_t i = 0; i < f.drawable_array.size(); i++) { std::printf("Array[%zu] '%s' ", i, f.drawable_array_names[i].c_str()); print_drawable(f.drawable_array[i], verbose); }
@@ -300,6 +300,8 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
     else if (ext == ".ybn") written = write_ybn(*read_ybn(file));
     else if (ext == ".ytyp") written = write_ytyp(read_ytyp(file));
     else if (ext == ".ymap") written = write_ymap(read_ymap(file));
+    else if (ext == ".yft") written = write_yft(read_yft(file));
+    else if (ext == ".yld") written = write_yld(read_yld(file));
     else { std::printf("no writer for %s\n", ext.c_str()); return 1; }
     rsc::write_file(out, written);
     auto a = rsc::Resource::load(file), b = rsc::Resource::load(written);
@@ -311,6 +313,8 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
     else if (ext == ".ybn") read_ybn(written);
     else if (ext == ".ytyp") read_ytyp(written);
     else if (ext == ".ymap") read_ymap(written);
+    else if (ext == ".yft") read_yft(written);
+    else if (ext == ".yld") read_yld(written);
     else read_ydd(written);
     return 0;
 }

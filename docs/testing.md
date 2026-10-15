@@ -13,8 +13,8 @@ rk_roundtrip --game[=install dir] [--every=N] [--max=N] [--only=...] [--record=f
 ```
 
 `--game` takes a sample of a GTA V install through the game index: every Nth `rel ybn ydd ydr yld yft ymap ymf ymt ytd ytyp meta xml`.
-PSO, RBF and `.rel` files must come back byte for byte, XML data files as the same document. Of a `.yft` only the
-environment cloth is tested (read, written into a resource of its own, read back); fragments without cloth are not counted.
+PSO, RBF and `.rel` files must come back byte for byte, XML data files as the same document. A `.yft` is written
+with `write_yft`, read again and compared whole: drawables, physics, glass, lights and cloth.
 `--record` keeps a digest of everything written per file and `--check` compares a later run with it, so a rewrite of
 any module can be held to the bytes the previous code wrote. With `--every=50` that is 4,958 files of the Legacy install
 in about four and a half minutes, all of which read back field for field.
@@ -44,7 +44,7 @@ it loads files ragekit wrote with CodeWalker's own parsers, so a file is known t
 original means. Build it with `dotnet build -c Release tests/oracle -p:CodeWalkerCore=path\to\CodeWalker.Core.csproj`.
 
 ```
-oracle <file>...                        load .ydr/.ybn/.ytd/.ytyp/.ymap/.ymf files and print a summary
+oracle <file>...                        load .ydr/.ybn/.ytd/.yft/.ytyp/.ymap/.ymf files and print a summary
 oracle pair <list.txt> [xml dir]        "original|written" pairs of ytyp/ymap: the summaries and CodeWalker XML must agree
 oracle pso <list.txt> / rel <list.txt>  the same for PSO and .rel files
 oracle rpf <game dir> <file.rpf> ...    list an archive as CodeWalker does (tests/cmp_rpf.sh diffs it with rk rpf ls)
