@@ -94,6 +94,23 @@ foreach (var path in args)
             Console.WriteLine($"ok   {Path.GetFileName(path)}:");
             if (!DescribeDrawable(ydr.Drawable)) failures++;
         }
+        else if (lower.EndsWith(".ynv"))
+        {
+            var ynv = RpfFile.GetResourceFile<YnvFile>(data);
+            var n = ynv.Nav;
+            byte[] bytesOf<T>(IEnumerable<T> items) where T : struct
+            {
+                var list = items?.ToArray() ?? Array.Empty<T>();
+                int size = System.Runtime.InteropServices.Marshal.SizeOf<T>();
+                var buf = new byte[list.Length * size];
+                var h = System.Runtime.InteropServices.GCHandle.Alloc(list, System.Runtime.InteropServices.GCHandleType.Pinned);
+                System.Runtime.InteropServices.Marshal.Copy(h.AddrOfPinnedObject(), buf, 0, buf.Length);
+                h.Free();
+                return buf;
+            }
+            Console.WriteLine($"ok   {Path.GetFileName(path)}: area {n.AreaID} flags {n.ContentFlags} vertices {n.VerticesCount} polys {n.PolysCount} indices {n.EdgesIndicesCount} points {n.PointsCount} portals {n.PortalsCount} links {n.PortalLinksCount} total {n.TotalBytes} adjacent [{string.Join(" ", n.AdjAreaIDs.Values)}]");
+            Console.WriteLine($"       vertices {Fnv(bytesOf(n.Vertices?.GetFullList())):X16} indices {Fnv(bytesOf(n.Indices?.GetFullList())):X16} edges {Fnv(bytesOf(n.Edges?.GetFullList())):X16} polys {Fnv(bytesOf(n.Polys?.GetFullList())):X16} portals {Fnv(bytesOf(n.Portals)):X16}");
+        }
         else if (lower.EndsWith(".ypt"))
         {
             var ypt = RpfFile.GetResourceFile<YptFile>(data);

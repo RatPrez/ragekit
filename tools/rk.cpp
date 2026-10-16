@@ -280,6 +280,13 @@ static int cmd_info(const std::string& path, bool verbose) {
         if (b) print_bound(*b, 0);
     } else if (ext == ".yft") {
         print_fragment(read_yft(file), verbose);
+    } else if (ext == ".ynv") {
+        const NavMesh n = read_ynv(file);
+        const Vec3 lo = n.box_min(), hi = n.box_max();
+        std::printf("Navmesh area %u (cell %u, %u): flags 0x%X, %zu polygons, %zu vertices, %zu points, %zu portals, %zu adjacent areas\n", n.area_id,
+                    n.area_id % 100, n.area_id / 100, n.content_flags, n.polys.size(), n.vertices.size(), n.points().size(), n.portals.size(),
+                    n.adjacent_areas.size());
+        std::printf("  box (%.2f %.2f %.2f) .. (%.2f %.2f %.2f)\n", lo.x, lo.y, lo.z, hi.x, hi.y, hi.z);
     } else if (ext == ".ypt") {
         const ParticleDictionary p = read_ypt(file);
         std::printf("Particle dictionary '%s': %zu textures, %zu drawables, %zu particle rules, %zu effect rules, %zu emitter rules, %zu blocks\n",
@@ -321,6 +328,7 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
     else if (ext == ".yft") written = write_yft(read_yft(file));
     else if (ext == ".yld") written = write_yld(read_yld(file));
     else if (ext == ".ypt") written = write_ypt(read_ypt(file));
+    else if (ext == ".ynv") written = write_ynv(read_ynv(file));
     else { std::printf("no writer for %s\n", ext.c_str()); return 1; }
     rsc::write_file(out, written);
     auto a = rsc::Resource::load(file), b = rsc::Resource::load(written);
@@ -335,6 +343,7 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
     else if (ext == ".yft") read_yft(written);
     else if (ext == ".yld") read_yld(written);
     else if (ext == ".ypt") read_ypt(written);
+    else if (ext == ".ynv") read_ynv(written);
     else read_ydd(written);
     return 0;
 }

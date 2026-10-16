@@ -803,6 +803,32 @@ static void compare_ypt(Cmp& c, const ParticleDictionary& a, const ParticleDicti
     c.eq(a.blocks().size(), b.blocks().size(), "ypt.blocks.count");
 }
 
+// Navmeshes: every stored value bit for bit, and the written header's bytes (pointers aside) the original's.
+static void compare_sector(Cmp& c, const NavSector& a, const NavSector& b, const std::string& p) {
+    if (std::memcmp(&a.min, &b.min, 16) || std::memcmp(&a.max, &b.max, 16) || std::memcmp(&a.box, &b.box, sizeof a.box)) c.fail(p + ".box");
+    c.eq(a.has_data, b.has_data, p + ".has_data"); c.eq(a.points_start, b.points_start, p + ".points_start"); c.eq(a.polys, b.polys, p + ".polys");
+    eq_bits(c, a.points, b.points, p + ".points");
+    for (size_t i = 0; i < 4; i++) {
+        c.eq((bool)a.children[i], (bool)b.children[i], p + ".child");
+        if (a.children[i] && b.children[i]) compare_sector(c, *a.children[i], *b.children[i], p + "." + std::to_string(i));
+    }
+}
+static void compare_ynv(Cmp& c, const NavMesh& a, const NavMesh& b, const Bytes& original, const Bytes& written) {
+    c.eq(a.content_flags, b.content_flags, "ynv.flags"); c.eq(a.version, b.version, "ynv.version"); c.eq(a.build, b.build, "ynv.build");
+    c.eq(a.area_id, b.area_id, "ynv.area"); c.eq(a.adjacent_areas, b.adjacent_areas, "ynv.adjacent");
+    if (std::memcmp(a.transform.data(), b.transform.data(), 64) || std::memcmp(&a.size, &b.size, 12) || a.size_w != b.size_w) c.fail("ynv.transform/size");
+    eq_bits(c, a.vertices, b.vertices, "ynv.vertices"); c.eq(a.indices, b.indices, "ynv.indices"); eq_bits(c, a.edges, b.edges, "ynv.edges");
+    eq_bits(c, a.polys, b.polys, "ynv.polys"); eq_bits(c, a.portals, b.portals, "ynv.portals"); c.eq(a.portal_links, b.portal_links, "ynv.portal_links");
+    c.eq(a.sectors.has_value(), b.sectors.has_value(), "ynv.sectors");
+    if (a.sectors && b.sectors) compare_sector(c, *a.sectors, *b.sectors, "ynv.sector");
+    rsc::Resource ra = rsc::Resource::load(original), rb = rsc::Resource::load(written);
+    const uint8_t* x = ra.system.data() + 0x10; const uint8_t* y = rb.system.data() + 0x10;
+    for (size_t o = 0x10; o < 368; o++) {
+        const bool ptr = (o >= 0x70 && o < 0x78) || (o >= 0x80 && o < 0x90) || (o >= 0x118 && o < 0x138);
+        if (!ptr && x[o - 0x10] != y[o - 0x10]) { c.fail("ynv: header byte " + std::to_string(o) + " differs"); break; }
+    }
+}
+
 static bool g_cross = false;   // --cross: also write every ytd/ydr/ydd/yft in the other edition, read it and compare
 
 // The edition of a resource file, from its version.
@@ -951,6 +977,10 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             compare_ypt(c, a, read_ypt(w));
             if (game == Game::Enhanced) check_gen9_bytes(c, ext, file, w);
             if (g_cross) { Cmp x; x.cross = true; compare_ypt(x, a, read_ypt(write_ypt(a, other(game)))); if (x.diffs) c.fail("cross: " + x.first_diff); }
+        } else if (ext == ".ynv") {
+            const NavMesh a = read_ynv(file);
+            Bytes w = write_ynv(a); mix(w); out_size = w.size();
+            compare_ynv(c, a, read_ynv(w), file, w);
         } else if (ext == ".yld") {
             auto a = read_yld(file); Bytes w = write_yld(a); mix(w); out_size = w.size();
             if (rsc::Resource::load(w).version != rsc::kYld) c.fail("yld: written version");
@@ -1012,7 +1042,7 @@ static bool test_file(const fs::path& path) {
 
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
-           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt";
+           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv";
 }
 
 // A file test_bytes had nothing to test in is not counted.

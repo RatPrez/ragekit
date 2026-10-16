@@ -29,6 +29,7 @@ third_party/miniz  deflate (public domain)
 | .ydr drawables, .ydd dictionaries | yes | yes | shaders, textures, skeleton, joints, LODs, lights, embedded collision |
 | .ybn collision | yes | yes | every bound type, BVH read and build, meshes from triangles |
 | .yft fragments | yes | yes | vehicles, props, ped ragdolls: drawables, physics LODs (groups, children, archetypes, bounds, joints), glass, vehicle glass, lights, cloth |
+| .ynv navmeshes | yes | yes | polygons, edges and links, cover points, special links; every cell of both editions reads back exactly |
 | .ypt particle effects | yes | yes | textures and drawables, and every effect, emitter and particle rule kept as read: all 2,784 game files of both editions round-trip exactly |
 | .yld cloth dictionaries | yes | yes | the simulated cloth of peds' clothing: verlet meshes, skinning, collision capsules |
 | .ytyp / .ymap | yes | yes | typed archetypes (interiors with rooms, portals, entity sets), entities, MLO instances, car generators, occluders; a lossless generic meta layer under them |
@@ -107,6 +108,7 @@ rsc::write_file("prop_copy.ydr", write_ydr(d));
 - [Getting started](docs/getting-started.md): building, using it from CMake, conventions, keys
 - [RSC7 resources](docs/resources.md): the container, page flags, building resources, the page layout
 - [Models, textures and collision](docs/models-and-textures.md): ytd, ydr, ydd, ybn, yft, CodeWalker XML, glTF
+- [Navmeshes](docs/navmeshes.md): cells, polygons and links, reading and writing
 - [GTA V Enhanced](docs/enhanced.md): choosing the edition, what differs, converting between Legacy and Enhanced
 - [Map files](docs/maps.md): the meta container, ytyp and ymap, occluders
 - [PSO, RBF, XML data, manifests and audio](docs/pso-and-audio.md): PSO and RBF files, `.meta` XML, `_manifest.ymf`, `.rel`, interior audio
@@ -127,7 +129,7 @@ same CodeWalker XML. These tests do not run the game itself. See [docs/testing.m
 ## Not done yet
 
 - Typed models for the common PSO files (carcols, carvariations, peds ...).
-- Animations (.ycd), navmeshes, path nodes and the other formats [docs/codewalker-comparison.md](docs/codewalker-comparison.md)
+- Animations (.ycd), path nodes and the other formats [docs/codewalker-comparison.md](docs/codewalker-comparison.md)
   lists as gaps.
 
 ## AI usage

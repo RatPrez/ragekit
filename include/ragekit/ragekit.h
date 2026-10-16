@@ -13,6 +13,7 @@
 #include "cloth.h"
 #include "fragment.h"
 #include "particle.h"
+#include "navmesh.h"
 #include "meta.h"
 #include "map.h"
 #include "pso.h"
