@@ -316,19 +316,16 @@ static void gen9_image_params(BlockWriter& w, const Texture& t, const TextureGen
     w.u16(1);                               // 0x26 usage count
 }
 
-// The usage flags (usage_data >> 5) mean other things in the two editions; the game's files of the same texture in both
-// show the rule: Enhanced keeps Legacy's two low bits (NOT_HALF, HD_SPLIT) and bit 22 as its bit 2, and sets 0x40010
-// (0x18010 for most textures without mips) where Legacy has the size bits. Legacy, from Enhanced, gets the same three bits
-// and bit 24, which almost every texture of Legacy carries.
+// The usage word is m_PhysicalSizeAndTemplateType (texture.h). Legacy splits the template (type, flags, version) around the
+// physical size; Enhanced keeps the template whole in bits 0-11 and has a field of its own in bits 19-23, which the game's
+// Enhanced copies of Legacy textures set to 16, or 6 for most textures without mips.
 static uint32_t usage_to_gen9(const Texture& t) {
-    const uint32_t l = t.usage_data >> 5;
-    const uint32_t f = (t.levels > 1 ? 0x40010u : 0x18010u) | (l & 3) | ((l >> 22) & 1) << 2;
-    return (t.usage_data & 0x1F) | f << 5;
+    return t.template_type() | (t.levels > 1 ? 16u : 6u) << 19;
 }
 static uint32_t usage_to_legacy(const Texture& t) {
-    const uint32_t g = t.usage_data >> 5;
-    const uint32_t f = 0x1000000u | (g & 3) | ((g >> 2) & 1) << 22;
-    return (t.usage_data & 0x1F) | f << 5;
+    const uint32_t tt = t.template_type();
+    const uint32_t size = ((uint32_t)t.data.size() + 4095u) & ~4095u;   // what most of the game's textures record
+    return (tt & 0x7F) | (size & 0x07FFFF80u) | ((tt >> 7) & 0x1F) << 27;
 }
 
 static BlockId write_texture_gen9(Builder& b, const Texture& t) {

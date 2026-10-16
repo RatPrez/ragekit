@@ -72,15 +72,31 @@ struct Texture {
     uint16_t stride = 0;     // row pitch of level 0; recomputed on write if 0
     TextureFormat format = TextureFormat::DXT1;
     uint8_t levels = 1;
-    uint32_t usage_data = 0; // usage (low 5 bits) | usage flags << 5
-    uint32_t extra_flags = 0;
-    uint16_t unk32 = 0x20;   // observed 0x20..0x90 on dictionary textures, 2 on shader-parameter stubs (Legacy only)
+    // usage_data is rage::grcTexture's m_PhysicalSizeAndTemplateType (names from RageAM's reversed headers):
+    //   bits 0-4   the template type (TextureUsage)
+    //   bits 5-6   template flags NOT_HALF (0x20), HD_SPLIT (0x40)
+    //   bits 7-26  Legacy: the texture's physical size in bytes (the data rounded up to 4 KiB in most of the game's files)
+    //   bits 27-31 Legacy: template flags FULL (bit 27), MAPS_HALF (28) and the template version (29-31: 4 = current)
+    // Enhanced keeps the template in bits 0-11 as one value (FULL 0x80, MAPS_HALF 0x100, version 0x200) and a field of
+    // its own in bits 19-23 (16 on most textures, 6 on many without mips); a write in the other edition converts it.
+    uint32_t usage_data = 0;
+    uint32_t extra_flags = 0;  // grcTexturePC::m_ExtraFlags
+    // Legacy byte 0x32: m_ResourceTypeAndConversionFlags: the resource type in bits 0-1 (0 a texture, 2 a reference: the
+    // stubs shader parameters point at) and conversion flags (0x80 processed, 0x40 skipped, 0x20 failed processing,
+    // 0x10 invalid metadata, 0x08 optimised DXT); byte 0x33: m_LayerCount. 0x80 on most of the game's textures.
+    uint16_t unk32 = 0x20;
     Bytes data;              // the full mip chain, level 0 first (the same bytes in both editions)
     std::optional<TextureGen9> gen9;   // set by reading an Enhanced file
 
     TextureUsage usage() const { return (TextureUsage)(usage_data & 0x1F); }
     void set_usage(TextureUsage u) { usage_data = (usage_data & ~0x1Fu) | ((uint32_t)u & 0x1F); }
     uint32_t usage_flags() const { return usage_data >> 5; }
+    /// Legacy: the physical size usage_data records (bits 7-26).
+    uint32_t physical_size() const { return usage_data & 0x07FFFF80u; }
+    /// The template type with its flags and version as one value (bits 0-11): Legacy's bits 27-31 moved to 7-11.
+    uint32_t template_type() const { return gen9 ? (usage_data & 0xFFF) : (usage_data & 0x7F) | ((usage_data >> 27) & 0x1F) << 7; }
+    uint8_t conversion_flags() const { return (uint8_t)(unk32 & 0xF8); }
+    uint8_t layer_count() const { return (uint8_t)(unk32 >> 8); }
     uint32_t name_hash() const;
     /// Byte range of one mip level inside data.
     std::span<const uint8_t> level(uint32_t level, uint32_t& w, uint32_t& h) const;
