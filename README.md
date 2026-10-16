@@ -69,7 +69,7 @@ include(FetchContent)
 FetchContent_Declare(
     ragekit
     GIT_REPOSITORY https://github.com/RatPrez/ragekit.git
-    GIT_TAG        v0.1.0        # a release tag (or a commit hash); main follows the latest
+    GIT_TAG        v0.2.0        # a release tag (or a commit hash); main follows the latest
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(ragekit)

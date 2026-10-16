@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ragekit VERSION 0.1.0 LANGUAGES C CXX)
+project(ragekit VERSION 0.2.0 LANGUAGES C CXX)
 
 # ragekit: a C++20 library for reading and writing RAGE (GTA V) resource files
 # (RSC7 containers: .ydr .ydd .ytd .yft .ybn ...) and converting them to and from
@@ -59,6 +59,12 @@ add_library(ragekit STATIC
 find_package(Threads REQUIRED)
 target_link_libraries(ragekit PUBLIC Threads::Threads)
 add_library(ragekit::ragekit ALIAS ragekit)
+# version.h must agree with the project version (the release tag is v${PROJECT_VERSION})
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/include/ragekit/version.h _ragekit_version_h)
+string(REGEX MATCH "RAGEKIT_VERSION_STRING \"([0-9.]+)\"" _ragekit_v "${_ragekit_version_h}")
+if (NOT CMAKE_MATCH_1 STREQUAL ragekit_VERSION)
+    message(FATAL_ERROR "include/ragekit/version.h says ${CMAKE_MATCH_1}, CMakeLists.txt says ${ragekit_VERSION}")
+endif()
 target_compile_features(ragekit PUBLIC cxx_std_20)
 
 target_include_directories(ragekit
