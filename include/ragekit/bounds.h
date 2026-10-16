@@ -101,19 +101,19 @@ struct Bound {
     float sphere_radius = 0;
     Vec3 box_max, box_min, box_center, sphere_center;
     float margin = 0.04f;
-    uint32_t unk3C = 1;              // 1, or 2 in fragments
+    uint32_t unk3C = 1;              // phBound::m_RefCount: 1, or 2 in fragments (where the bound is shared)
     uint8_t material_index = 0, procedural_id = 0, room_ped_density = 0, unk_flags = 0;
     uint8_t poly_flags = 0, material_colour_index = 0;
-    uint16_t unk5E = 0;
+    uint16_t unk5E = 0;              // the upper half of the 64-bit material id (m_MaterialID1)
     Vec3 inertia;
     float volume = 0;
-    float unk70 = 0;                 // capsule, disc, cylinder (128 bytes); cloth capsules carry values
+    float unk70 = 0;                 // capsule, disc, cylinder (128 bytes): a capsule's half height (phBoundCapsule::m_CapsuleHalfHeight)
 
     // Geometry / GeometryBVH
     struct Geometry {
-        uint16_t unk80 = 0, unk82 = 0;
+        uint16_t unk80 = 0, unk82 = 0;   // phBoundPolyhedron: two unused bytes; m_NumPerVertexAttributes (1 with vertex colours)
         Vec3 quantum;                 // vertex quantisation step (0 = compute on write)
-        float unk9C = 0, unkAC = 0;
+        float unk9C = 0, unkAC = 0;      // the W lanes of the quantisation factor and of the centre
         Vec3 center;                  // vertices are relative to this
         std::vector<Vec3> vertices, vertices_shrunk;
         std::vector<BoundPolygon> polygons;

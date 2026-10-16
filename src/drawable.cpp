@@ -685,7 +685,7 @@ Light read_light(const Reader& r, uint64_t ptr) {
     l.shadow_blur = c.u8();
     l.unk45 = c.u8();
     l.unk46 = c.u16();
-    c.u32();
+    l.extra_flags = c.u32();
     l.volume_intensity = c.f32();
     l.volume_size_scale = c.f32();
     l.volume_outer_colour[0] = c.u8(); l.volume_outer_colour[1] = c.u8(); l.volume_outer_colour[2] = c.u8();
@@ -1332,7 +1332,7 @@ void write_light(BlockWriter& w, const Light& l) {
     w.u8(l.shadow_blur);
     w.u8(l.unk45);
     w.u16(l.unk46);
-    w.u32(0);
+    w.u32(l.extra_flags);
     w.f32(l.volume_intensity);
     w.f32(l.volume_size_scale);
     w.u8(l.volume_outer_colour[0]); w.u8(l.volume_outer_colour[1]); w.u8(l.volume_outer_colour[2]);

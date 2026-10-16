@@ -171,6 +171,7 @@ static void compare_drawable(Cmp& c, const Drawable& a, const Drawable& b, const
         c.eqv(x.position, y.position, lp + ".position"); c.eqf(x.intensity, y.intensity, lp + ".intensity"); c.eq(x.flags, y.flags, lp + ".flags");
         c.eq(x.type, y.type, lp + ".type"); c.eqf(x.falloff, y.falloff, lp + ".falloff"); c.eqv(x.direction, y.direction, lp + ".direction");
         c.eq(x.projected_texture_hash, y.projected_texture_hash, lp + ".tex"); c.eq(x.colour[0], y.colour[0], lp + ".colour");
+        c.eq(x.unk45, y.unk45, lp + ".unk45"); c.eq(x.unk46, y.unk46, lp + ".unk46"); c.eq(x.extra_flags, y.extra_flags, lp + ".extra_flags");
     }
 }
 

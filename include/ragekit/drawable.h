@@ -25,7 +25,7 @@ struct ShaderParam {
     ParamType type = ParamType::Vector;
     std::string texture;         // Texture params: the texture name ("" for a null texture)
     std::vector<Vec4> values;    // Vector: 1 entry; Array: N entries
-    int16_t slot = -1;           // the register byte the game stores (0..255); -1 = computed on write (textures i + 2, vectors 160 up)
+    int16_t slot = -1;           // grcInstanceVar::Register (0..255); -1 = computed on write (textures i + 2, vectors 160 up)
 
     static ShaderParam tex(std::string_view name, const std::string& texture);
     static ShaderParam vec(std::string_view name, Vec4 v);
@@ -64,7 +64,9 @@ struct Shader {
     uint32_t name_hash = 0;      // shader name hash, e.g. joaat("normal_spec")
     uint32_t sps_hash = 0;       // preset file hash, e.g. joaat("normal_spec.sps")
     uint8_t render_bucket = 0;
-    uint16_t unk12 = 32768;
+    uint16_t unk12 = 32768;      // grcInstanceData m_PhysMtl (byte 0x12) and m_Flags (0x13): 0x80 flags in the game's files
+    uint8_t phys_material() const { return (uint8_t)(unk12 & 0xFF); }
+    uint8_t instance_flags() const { return (uint8_t)(unk12 >> 8); }
     std::vector<ShaderParam> params;   // the Legacy view, in both editions
     std::optional<ShaderGen9> gen9;    // set by reading an Enhanced file; made from the shader table for an Enhanced write otherwise
 
@@ -143,19 +145,32 @@ struct Geometry {
 
 struct Model {
     std::vector<Geometry> geometries;
-    uint32_t skeleton_binding = 0;   // byte 3: bone index; byte 1: has skin
+    // grmModel's four bytes at 0x28: m_BoneCount (bones a skinned model uses), m_Flags (1: relative transforms for
+    // skinning, every model with bone weights), m_Type, m_BoneIndex (the bone a rigid model follows). Names: RageAM.
+    uint32_t skeleton_binding = 0;
     uint8_t render_mask = 0xFF;
-    uint8_t flags = 0;
+    uint8_t flags = 0;               // m_TesselatedCountAndIsSkinned: bit 0 skinned, bits 1-7 geometries with tessellation
     AABB bounds;                     // union of the geometry boxes
 
     uint8_t bone_index() const { return (uint8_t)(skeleton_binding >> 24); }
     void set_bone_index(uint8_t b) { skeleton_binding = (skeleton_binding & 0x00FFFFFFu) | ((uint32_t)b << 24); }
+    uint8_t bone_count() const { return (uint8_t)skeleton_binding; }
+    uint8_t model_type() const { return (uint8_t)(skeleton_binding >> 16); }
+    bool is_skinned() const { return flags & 1; }
+    uint8_t tessellated_count() const { return (uint8_t)(flags >> 1); }
     bool has_skin() const { return (skeleton_binding >> 8) & 0xFF; }
     void set_has_skin(bool s) { skeleton_binding = (skeleton_binding & 0xFFFF00FFu) | (s ? 0x100u : 0u); }
     void compute_bounds();
 };
 
 // ---------------------------------------------------------------- skeleton
+
+/// crBoneData::m_Dofs (Bone::flags).
+namespace BoneDof {
+constexpr uint16_t RotateX = 1 << 0, RotateY = 1 << 1, RotateZ = 1 << 2, HasRotateLimits = 1 << 3, TranslateX = 1 << 4,
+                   TranslateY = 1 << 5, TranslateZ = 1 << 6, HasTranslateLimits = 1 << 7, ScaleX = 1 << 8, ScaleY = 1 << 9,
+                   ScaleZ = 1 << 10, HasScaleLimits = 1 << 11, HasChild = 1 << 12, IsSkinned = 1 << 13;
+}
 
 struct Bone {
     std::string name;
@@ -164,15 +179,18 @@ struct Bone {
     Vec3 scale{1, 1, 1};
     int16_t next_sibling = -1;
     int16_t parent = -1;
-    uint16_t flags = 0;
+    uint16_t flags = 0;      // crBoneData::m_Dofs, BoneDof: the degrees of freedom animation may move, limits, child, skinned
     int16_t index = 0;
     uint16_t tag = 0;
-    Vec4 transform_unk;      // column 4 of the skeleton's transform entry (purpose unknown)
+    Vec4 transform_unk;      // column 4 of the skeleton's default transform (m_DefaultTransforms keeps 4x4 matrices)
 };
 
 struct Skeleton {
     std::vector<Bone> bones;
+    // crSkeletonData: unk1C closes the bone tag map (atMap); unk50, unk54, unk58 are m_Signature, m_SignatureNonChiral and
+    // m_SignatureComprehensive, the hashes animations check a skeleton against.
     uint32_t unk1C = 0, unk50 = 0, unk54 = 0, unk58 = 0;
+    uint32_t signature() const { return unk50; }
     // Raw tables as read; left empty they are rebuilt from `bones` on write.
     std::vector<Mat4> transforms, transforms_inverse;
     std::vector<int16_t> parent_indices, child_indices;
@@ -204,8 +222,9 @@ struct Light {
     float falloff = 1, falloff_exponent = 1;
     Vec3 culling_plane_normal;
     float culling_plane_offset = 0;
-    uint8_t shadow_blur = 0, unk45 = 0;
+    uint8_t shadow_blur = 0, unk45 = 0;   // unk45: CLightAttr padding the game uses for extra flags (bit 2: high priority)
     uint16_t unk46 = 0;
+    uint32_t extra_flags = 0;              // 0x48, more extra flags (bit 7: used as a ped only light); 0 in the game's files
     float volume_intensity = 0, volume_size_scale = 0;
     uint8_t volume_outer_colour[3] = {0, 0, 0};
     uint8_t light_hash = 0;
@@ -236,7 +255,7 @@ struct Drawable {
     std::array<uint32_t, 4> render_mask_flags{};
     std::vector<Light> lights;
     std::shared_ptr<Bound> bound;            // embedded collision, if any
-    uint32_t unk3C = 0x7f800001, unk4C = 0x7f800001;
+    uint32_t unk3C = 0x7f800001, unk4C = 0x7f800001;   // the W lanes of the bounding box vectors (a NaN marker in every file)
 
     std::vector<Model>& models(Lod l) { return lods[(int)l]; }
     const std::vector<Model>& models(Lod l) const { return lods[(int)l]; }

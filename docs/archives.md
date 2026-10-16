@@ -84,3 +84,10 @@ rk rpf rewrite <in.rpf> <out.rpf> [--aes | --ng] [--nested]     any archive as O
 ```
 
 `add` and `rm` rewrite the file through `<rpf>.tmp` and keep its encryption (NG and AES included).
+
+## GTA V Enhanced
+
+Enhanced archives are the same RPF7 format with the same keys (`rk rpf keys GTA5_Enhanced.exe` finds the same AES key and
+hash table). ragekit's listing of Enhanced `common.rpf`, `x64e.rpf` and `update/update2.rpf` (16,686 entries, nested
+archives included) matches CodeWalker's in every size, flag and SHA-256 of the extracted entries (`tests/cmp_rpf.sh`),
+and the game index opens the install with all of its 179 archives on disk and 5,228 nested.
