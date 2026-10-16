@@ -2,6 +2,7 @@
 // the result, and compares the two models field by field. Prints one line per file. --record / --check keep a digest of
 // everything written per file, so a rewrite can be held to the bytes the previous code wrote.
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -30,6 +31,7 @@ static std::string lower(std::string s) { for (auto& c : s) c = (char)tolower((u
 struct Cmp {
     std::string first_diff;
     int diffs = 0;
+    bool cross = false;   // comparing a file with its write in the other edition: only what both editions store
     void fail(const std::string& what) { if (first_diff.empty()) first_diff = what; diffs++; }
     template <class T> void eq(const T& a, const T& b, const std::string& what) { if (!(a == b)) fail(what); }
     void eqf(float a, float b, const std::string& what) { if (std::memcmp(&a, &b, 4) != 0) fail(what); }
@@ -43,10 +45,18 @@ static void compare_texture(Cmp& c, const Texture& a, const Texture& b, const st
     c.eq(a.height, b.height, p + ".height");
     c.eq(a.format, b.format, p + ".format");
     c.eq(a.levels, b.levels, p + ".levels");
-    c.eq(a.usage_data, b.usage_data, p + ".usage");
+    c.eq(a.usage(), b.usage(), p + ".usage");
+    c.eq(a.data, b.data, p + ".data");
+    if (c.cross) return;
+    c.eq(a.usage_data, b.usage_data, p + ".usage_data");
     c.eq(a.extra_flags, b.extra_flags, p + ".extra_flags");
     c.eq(a.unk32, b.unk32, p + ".unk32");
-    c.eq(a.data, b.data, p + ".data");
+    c.eq(a.gen9.has_value(), b.gen9.has_value(), p + ".gen9");
+    if (a.gen9 && b.gen9) {
+        auto& x = *a.gen9; auto& y = *b.gen9;
+        c.eq(x.format, y.format, p + ".gen9.format"); c.eq(x.dimension, y.dimension, p + ".gen9.dimension"); c.eq(x.tile_mode, y.tile_mode, p + ".gen9.tile_mode");
+        c.eq(x.unk23, y.unk23, p + ".gen9.unk23"); c.eq(x.flags, y.flags, p + ".gen9.flags"); c.eq(x.srv_vft, y.srv_vft, p + ".gen9.srv_vft");
+    }
 }
 
 static void compare_txd(Cmp& c, const TextureDictionary& a, const TextureDictionary& b, const std::string& p) {
@@ -70,14 +80,27 @@ static void compare_drawable(Cmp& c, const Drawable& a, const Drawable& b, const
         for (size_t i = 0; i < sa.shaders.size() && i < sb.shaders.size(); i++) {
             auto& x = sa.shaders[i]; auto& y = sb.shaders[i];
             std::string sp = p + ".shader[" + std::to_string(i) + "]";
-            c.eq(x.name_hash, y.name_hash, sp + ".name"); c.eq(x.sps_hash, y.sps_hash, sp + ".sps");
-            c.eq(x.render_bucket, y.render_bucket, sp + ".bucket"); c.eq(x.unk12, y.unk12, sp + ".unk12");
+            c.eq(x.name_hash, y.name_hash, sp + ".name");
+            c.eq(x.render_bucket, y.render_bucket, sp + ".bucket");
+            if (!c.cross) { c.eq(x.sps_hash, y.sps_hash, sp + ".sps"); c.eq(x.unk12, y.unk12, sp + ".unk12"); }   // Enhanced stores no preset
+            if (!c.cross) {
+                c.eq(x.gen9.has_value(), y.gen9.has_value(), sp + ".gen9");
+                if (x.gen9 && y.gen9) {
+                    auto& u = *x.gen9; auto& v = *y.gen9;
+                    c.eq(u.params.size(), v.params.size(), sp + ".gen9.params.count");
+                    for (size_t k = 0; k < u.params.size() && k < v.params.size(); k++) { c.eq(u.params[k].name_hash, v.params[k].name_hash, sp + ".gen9.param.name"); c.eq(u.params[k].data, v.params[k].data, sp + ".gen9.param.data"); }
+                    c.eq(u.buffer_sizes, v.buffer_sizes, sp + ".gen9.buffer_sizes"); c.eq(u.buffers, v.buffers, sp + ".gen9.buffers");
+                    c.eq(u.textures, v.textures, sp + ".gen9.textures"); c.eq(u.samplers, v.samplers, sp + ".gen9.samplers");
+                    c.eq(u.unknowns, v.unknowns, sp + ".gen9.unknowns"); c.eq(u.copies, v.copies, sp + ".gen9.copies");
+                }
+            }
             c.eq(x.params.size(), y.params.size(), sp + ".params.count");
             for (size_t k = 0; k < x.params.size() && k < y.params.size(); k++) {
                 auto& u = x.params[k]; auto& v = y.params[k];
                 std::string pp = sp + ".param[" + hash_name(u.name_hash) + "]";
                 c.eq(u.name_hash, v.name_hash, pp + ".name"); c.eq(u.type, v.type, pp + ".type");
-                c.eq(u.texture, v.texture, pp + ".texture");
+                if (c.cross) c.eq(lower(u.texture), lower(v.texture), pp + ".texture");   // the other edition may resolve it to an embedded texture of another case
+                else c.eq(u.texture, v.texture, pp + ".texture");
                 c.eq(u.slot, v.slot, pp + ".slot");   // read slots are written back as they were (-1 = compute is only for new parameters)
                 c.eq(u.values.size(), v.values.size(), pp + ".values.count");
                 for (size_t m = 0; m < u.values.size() && m < v.values.size(); m++) c.eqv(u.values[m], v.values[m], pp + ".value");
@@ -118,10 +141,24 @@ static void compare_drawable(Cmp& c, const Drawable& a, const Drawable& b, const
             for (size_t k = 0; k < x.geometries.size() && k < y.geometries.size(); k++) {
                 auto& u = x.geometries[k]; auto& v = y.geometries[k];
                 std::string gp = mp + ".geom[" + std::to_string(k) + "]";
-                c.eq(u.layout.flags, v.layout.flags, gp + ".layout.flags"); c.eq(u.layout.types, v.layout.types, gp + ".layout.types");
-                c.eq(u.vertex_count, v.vertex_count, gp + ".vertex_count"); c.eq(u.vertices, v.vertices, gp + ".vertices");
+                c.eq(u.layout.flags, v.layout.flags, gp + ".layout.flags");
+                c.eq(u.vertex_count, v.vertex_count, gp + ".vertex_count");
+                if (c.cross && u.layout.types != v.layout.types && u.layout.flags == v.layout.flags && u.vertex_count == v.vertex_count) {
+                    // converted between layouts (cloth: Legacy's half floats, Enhanced's floats): the same values, to half precision
+                    for (int sem = 0; sem < 16; sem++) {
+                        if (!u.layout.has((VertexSemantic)sem)) continue;
+                        for (uint32_t k2 = 0; k2 < u.vertex_count; k2++) {
+                            const Vec4 x = u.get(k2, (VertexSemantic)sem), y = v.get(k2, (VertexSemantic)sem);
+                            const float d = std::max({std::fabs(x.x - y.x), std::fabs(x.y - y.y), std::fabs(x.z - y.z), std::fabs(x.w - y.w)});
+                            if (d > 0.01f * std::max(1.f, std::fabs(x.x) + std::fabs(x.y) + std::fabs(x.z))) { c.fail(gp + ".vertices (converted)"); break; }
+                        }
+                    }
+                } else {
+                    c.eq(u.layout.types, v.layout.types, gp + ".layout.types");
+                    c.eq(u.vertices, v.vertices, gp + ".vertices");
+                }
                 c.eq(u.indices, v.indices, gp + ".indices"); c.eq(u.shader_index, v.shader_index, gp + ".shader");
-                c.eq(u.bone_ids, v.bone_ids, gp + ".bone_ids"); c.eq(u.vb_flags, v.vb_flags, gp + ".vb_flags");
+                c.eq(u.bone_ids, v.bone_ids, gp + ".bone_ids"); c.eq(u.vb_flags, v.vb_flags, gp + ".vb_flags"); c.eq(u.vb_bind_gen9, v.vb_bind_gen9, gp + ".vb_bind_gen9");
                 c.eqv(u.bounds.min, v.bounds.min, gp + ".bounds"); c.eqv(u.bounds.max, v.bounds.max, gp + ".bounds");
             }
         }
@@ -324,6 +361,7 @@ static void compare_fragment(Cmp& c, const Fragment& a, const Fragment& b) {
     c.eq(a.drawable_array_names, b.drawable_array_names, "yft.drawable_array_names");
     c.eq(a.bone_transforms, b.bone_transforms, "yft.bone_transforms"); c.eq(a.bone_transforms_unk, b.bone_transforms_unk, "yft.bone_transforms_unk");
     c.eq(a.glass_windows, b.glass_windows, "yft.glass_windows");
+    if (!c.cross) c.eq(a.glass_declarations_gen9, b.glass_declarations_gen9, "yft.glass_declarations_gen9");
     for (int i = 0; i < 3; i++) {
         c.eq(a.physics[(size_t)i].has_value(), b.physics[(size_t)i].has_value(), "yft.physics.present");
         if (a.physics[(size_t)i] && b.physics[(size_t)i]) compare_lod(c, *a.physics[(size_t)i], *b.physics[(size_t)i], "yft.lod" + std::to_string(i));
@@ -588,8 +626,150 @@ static bool test_rel(const std::string& label, const Bytes& file) {
     return true;
 }
 
+// Enhanced drawables: walks the original and the written file side by side and compares, byte for byte, every structure
+// whose layout is Enhanced's own (shaders, their parameter blocks and tables, texture stubs, textures, vertex and index
+// buffers, declarations, buffer views, vertex and index data); pointers are compared as null / not null, vtables not at all.
+struct Gen9Walk {
+    const Reader& a; const Reader& b; Cmp& c;
+    std::string where;
+    void bytes(uint64_t pa, uint64_t pb, size_t n, std::initializer_list<size_t> ptrs, std::initializer_list<size_t> skip4, const std::string& what) {
+        const uint8_t* x = a.resource().at(pa, n); const uint8_t* y = b.resource().at(pb, n);
+        std::vector<bool> mask(n, false);
+        for (size_t o : ptrs) {
+            uint64_t u, v; std::memcpy(&u, x + o, 8); std::memcpy(&v, y + o, 8);
+            if ((u == 0) != (v == 0)) c.fail(where + what + ": pointer at " + std::to_string(o) + " null in one file only");
+            for (size_t k = 0; k < 8; k++) mask[o + k] = true;
+        }
+        for (size_t o : skip4) for (size_t k = 0; k < 4; k++) mask[o + k] = true;
+        for (size_t i = 0; i < n; i++) if (!mask[i] && x[i] != y[i]) { c.fail(where + what + ": byte " + std::to_string(i) + " differs"); return; }
+    }
+    void view(uint64_t pa, uint64_t pb, const std::string& what) { if (pa && pb) bytes(pa, pb, 32, {0}, {}, what + ".view"); }
+    void texture_ref(uint64_t pa, uint64_t pb) { if (pa && pb) bytes(pa, pb, 80, {0x28, 0x30, 0x38}, {0}, "texture stub"); }
+    void texture(uint64_t pa, uint64_t pb) {
+        bytes(pa, pb, 128, {0x28, 0x30, 0x38, 0x58}, {0}, "texture");
+        const uint64_t n = (uint64_t)a.u32(pa + 8) * a.u32(pa + 12);
+        if (n) bytes(a.u64(pa + 0x38), b.u64(pb + 0x38), (size_t)n, {}, {}, "texture data");
+    }
+    void txd(uint64_t pa, uint64_t pb) {
+        if (!pa || !pb) return;
+        const uint16_t n = a.u16(pa + 0x38);
+        if (n != b.u16(pb + 0x38)) { c.fail(where + "txd count"); return; }
+        for (uint16_t i = 0; i < n; i++) texture(a.u64(a.u64(pa + 0x30) + 8ull * i), b.u64(b.u64(pb + 0x30) + 8ull * i));
+    }
+    void shader(uint64_t pa, uint64_t pb) {
+        bytes(pa, pb, 64, {8, 0x10, 0x18, 0x20}, {}, "shader");
+        const uint64_t ia = a.u64(pa + 0x20), ib = b.u64(pb + 0x20);
+        if (!ia || !ib) return;
+        const uint8_t np = a.u8(ia + 4);
+        bytes(ia, ib, 8 + 8ull * np, {}, {}, "shader table");
+        const uint8_t nb = a.u8(ia), nt = a.u8(ia + 1), nu = a.u8(ia + 2), ns = a.u8(ia + 3), copies = a.u8(ia + 7);
+        const uint64_t qa = a.u64(pa + 8), qb = b.u64(pb + 8);
+        const uint16_t total = a.u16(pa + 0x3A);
+        std::vector<size_t> ptrs;
+        for (size_t i = 0; i < (size_t)nb * copies; i++) ptrs.push_back(i * 8);
+        const size_t tex_at = (size_t)(a.u64(pa + 0x10) - qa);
+        for (size_t i = 0; i < (size_t)nt * copies; i++) ptrs.push_back(tex_at + i * 8);
+        const uint8_t* x = a.resource().at(qa, total); const uint8_t* y = b.resource().at(qb, total);
+        std::vector<bool> mask(total, false);
+        for (size_t o : ptrs) {
+            uint64_t u, v; std::memcpy(&u, x + o, 8); std::memcpy(&v, y + o, 8);
+            if ((u == 0) != (v == 0)) c.fail(where + "shader block: pointer at " + std::to_string(o) + " null in one file only");
+            if (u && o < (size_t)nb * copies * 8 && u - qa != v - qb) c.fail(where + "shader block: buffer pointer at " + std::to_string(o) + " points elsewhere");
+            for (size_t k = 0; k < 8; k++) mask[o + k] = true;
+        }
+        for (size_t i = 0; i < total; i++) if (!mask[i] && x[i] != y[i]) { c.fail(where + "shader block: byte " + std::to_string(i) + " of " + std::to_string(total) + " differs"); break; }
+        for (size_t i = 0; i < nt; i++) texture_ref(a.u64(qa + tex_at + 8 * i), b.u64(qb + tex_at + 8 * i));
+        (void)nu; (void)ns;
+    }
+    void geometry(uint64_t pa, uint64_t pb) {
+        const uint64_t va = a.u64(pa + 0x18), vb = b.u64(pb + 0x18), xa = a.u64(pa + 0x38), xb = b.u64(pb + 0x38);
+        if (va && vb) {
+            bytes(va, vb, 64, {0x18, 0x30, 0x38}, {0}, "vertex buffer");
+            view(a.u64(va + 0x30), b.u64(vb + 0x30), "vertex buffer");
+            if (a.u64(va + 0x38) && b.u64(vb + 0x38)) bytes(a.u64(va + 0x38), b.u64(vb + 0x38), 320, {}, {}, "declaration");
+            const size_t n = (size_t)a.u32(va + 8) * a.u16(va + 12);
+            if (n) bytes(a.u64(va + 0x18), b.u64(vb + 0x18), n, {}, {}, "vertices");
+        }
+        if (xa && xb) {
+            bytes(xa, xb, 64, {0x18, 0x30}, {0}, "index buffer");
+            view(a.u64(xa + 0x30), b.u64(xb + 0x30), "index buffer");
+            const size_t n = (size_t)a.u32(xa + 8) * 2;
+            if (n) bytes(a.u64(xa + 0x18), b.u64(xb + 0x18), n, {}, {}, "indices");
+        }
+    }
+    void drawable(uint64_t pa, uint64_t pb) {
+        if (!pa || !pb) return;
+        const uint64_t sa = a.u64(pa + 0x10), sb = b.u64(pb + 0x10);
+        if (sa && sb) {
+            bytes(sa, sb, 64, {8, 0x10}, {0}, "shader group");
+            txd(a.u64(sa + 8), b.u64(sb + 8));
+            const uint16_t n = a.u16(sa + 0x18);
+            for (uint16_t i = 0; i < n; i++) shader(a.u64(a.u64(sa + 0x10) + 8ull * i), b.u64(b.u64(sb + 0x10) + 8ull * i));
+        }
+        for (int l = 0; l < 4; l++) {
+            const uint64_t la = a.u64(pa + 0x50 + 8ull * l), lb = b.u64(pb + 0x50 + 8ull * l);
+            if (!la || !lb) continue;
+            const uint16_t mc = a.u16(la + 8);
+            for (uint16_t m = 0; m < mc; m++) {
+                const uint64_t ma = a.u64(a.u64(la) + 8ull * m), mb = b.u64(b.u64(lb) + 8ull * m);
+                const uint16_t gc = a.u16(ma + 0x10);
+                for (uint16_t k = 0; k < gc; k++) geometry(a.u64(a.u64(ma + 8) + 8ull * k), b.u64(b.u64(mb + 8) + 8ull * k));
+            }
+        }
+    }
+};
+
+static void check_gen9_bytes(Cmp& c, const std::string& ext, const Bytes& original, const Bytes& written) {
+    rsc::Resource ra = rsc::Resource::load(original), rb = rsc::Resource::load(written);
+    Reader a(ra, Game::Enhanced), b(rb, Game::Enhanced);
+    Gen9Walk w{a, b, c, ""};
+    const uint64_t root = rsc::kSystemBase;
+    if (ext == ".ytd") w.txd(root, root);
+    else if (ext == ".ydr") w.drawable(root, root);
+    else if (ext == ".ydd") {
+        const uint16_t n = a.u16(root + 0x38);
+        if (n != b.u16(root + 0x38)) { c.fail("ydd count"); return; }
+        // the writer sorts by hash: match the drawables by their hash
+        for (uint16_t i = 0; i < n; i++) {
+            const uint32_t h = a.u32(a.u64(root + 0x20) + 4ull * i);
+            for (uint16_t k = 0; k < n; k++)
+                if (b.u32(b.u64(root + 0x20) + 4ull * k) == h) { w.where = hash_name(h) + ": "; w.drawable(a.u64(a.u64(root + 0x30) + 8ull * i), b.u64(b.u64(root + 0x30) + 8ull * k)); break; }
+        }
+    } else if (ext == ".yft") {
+        for (size_t at : {0x30, 0xF8}) { w.where = at == 0x30 ? "drawable: " : "cloth drawable: "; w.drawable(a.u64(root + at), b.u64(root + at)); }
+        const uint64_t aa = a.u64(root + 0x38), ab = b.u64(root + 0x38);
+        for (uint32_t i = 0; aa && ab && i < a.u32(root + 0x48); i++) { w.where = "array " + std::to_string(i) + ": "; w.drawable(a.u64(aa + 8ull * i), b.u64(ab + 8ull * i)); }
+        w.where = "";
+        const uint64_t ga = a.u64(root + 0xE0), gb = b.u64(root + 0xE0);
+        for (uint8_t i = 0; ga && gb && i < a.u8(root + 0xD9); i++) w.bytes(a.u64(ga + 8ull * i), b.u64(gb + 8ull * i), 416, {}, {}, "glass window");
+        // the physics children's drawables
+        const uint64_t pa = a.u64(root + 0xF0), pb = b.u64(root + 0xF0);
+        for (int l = 0; pa && pb && l < 3; l++) {
+            const uint64_t la = a.u64(pa + 0x10 + 8ull * l), lb = b.u64(pb + 0x10 + 8ull * l);
+            if (!la || !lb) continue;
+            const uint8_t n = a.u8(la + 0x11D);
+            for (uint8_t i = 0; i < n; i++) {
+                const uint64_t ca = a.u64(a.u64(la + 0xD0) + 8ull * i), cb = b.u64(b.u64(lb + 0xD0) + 8ull * i);
+                for (size_t at : {0xA0, 0xA8}) { w.where = "lod" + std::to_string(l) + " child " + std::to_string(i) + ": "; w.drawable(a.u64(ca + at), b.u64(cb + at)); }
+            }
+        }
+    }
+}
+
+static bool g_cross = false;   // --cross: also write every ytd/ydr/ydd/yft in the other edition, read it and compare
+
+// The edition of a resource file, from its version.
+static Game game_of_file(const std::string& ext, const Bytes& file) {
+    if (!rsc::Resource::is_resource(file)) return Game::Legacy;
+    int v = 0;
+    std::memcpy(&v, file.data() + 4, 4);
+    return rsc::game_of(ext, v);
+}
+static Game other(Game g) { return g == Game::Enhanced ? Game::Legacy : Game::Enhanced; }
+
 static bool test_bytes(const std::string& label, const std::string& ext, const Bytes& file) {
     g_digest = 0;
+    const Game game = game_of_file(ext, file);
     if (ext == ".rel") return test_rel(label, file);
     if ((ext == ".meta" || ext == ".xml") && !is_rbf(file) && !is_pso(file)) {
         // XML data files (vehicles.meta, carcols, handling, peds ...): parse -> write -> parse must give the same document
@@ -690,13 +870,21 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
                 if (mw != file) std::printf("note  %s: write_ymf bytes differ from the original (%zu vs %zu)\n", label.c_str(), mw.size(), file.size());
             }
         } else if (ext == ".ytd") {
-            auto a = read_ytd(file); Bytes w = write_ytd(a); mix(w); out_size = w.size(); auto b = read_ytd(w); compare_txd(c, a, b, "txd");
+            auto a = read_ytd(file); Bytes w = write_ytd(a, game); mix(w); out_size = w.size(); auto b = read_ytd(w); compare_txd(c, a, b, "txd");
+            if (rsc::game_of(ext, rsc::Resource::load(w).version) != game) c.fail("ytd: written version");
+            if (game == Game::Enhanced) check_gen9_bytes(c, ext, file, w);
+            if (g_cross) { Cmp x; x.cross = true; compare_txd(x, a, read_ytd(write_ytd(a, other(game))), "cross.txd"); if (x.diffs) c.fail(x.first_diff); }
         } else if (ext == ".ydr") {
-            auto a = read_ydr(file); Bytes w = write_ydr(a); mix(w); out_size = w.size(); auto b = read_ydr(w); compare_drawable(c, a, b, "ydr");
+            auto a = read_ydr(file); Bytes w = write_ydr(a, game); mix(w); out_size = w.size(); auto b = read_ydr(w); compare_drawable(c, a, b, "ydr");
+            if (rsc::game_of(ext, rsc::Resource::load(w).version) != game) c.fail("ydr: written version");
+            if (game == Game::Enhanced) check_gen9_bytes(c, ext, file, w);
+            if (g_cross) { Cmp x; x.cross = true; compare_drawable(x, a, read_ydr(write_ydr(a, other(game))), "cross.ydr"); if (x.diffs) c.fail(x.first_diff); }
         } else if (ext == ".ybn") {
             auto a = read_ybn(file); Bytes w = write_ybn(*a); mix(w); out_size = w.size(); auto b = read_ybn(w); compare_bound(c, *a, *b, "ybn");
         } else if (ext == ".ydd") {
-            auto a = read_ydd(file); Bytes w = write_ydd(a); mix(w); out_size = w.size(); auto b = read_ydd(w);
+            auto a = read_ydd(file); Bytes w = write_ydd(a, game); mix(w); out_size = w.size(); auto b = read_ydd(w);
+            if (rsc::game_of(ext, rsc::Resource::load(w).version) != game) c.fail("ydd: written version");
+            if (game == Game::Enhanced) check_gen9_bytes(c, ext, file, w);
             c.eq(a.drawables.size(), b.drawables.size(), "ydd.count");
             // the writer sorts by hash (stable), so sort the input the same way and match by position
             std::vector<size_t> order(a.drawables.size());
@@ -720,9 +908,11 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             }
         } else if (ext == ".yft") {
             const Fragment a = read_yft(file);
-            Bytes w = write_yft(a); mix(w); out_size = w.size();
-            if (rsc::Resource::load(w).version != rsc::kYft) c.fail("yft: written version");
+            Bytes w = write_yft(a, game); mix(w); out_size = w.size();
+            if (rsc::Resource::load(w).version != rsc::version_for("yft", game)) c.fail("yft: written version");
             compare_fragment(c, a, read_yft(w));
+            if (game == Game::Enhanced) check_gen9_bytes(c, ext, file, w);
+            if (g_cross) { Cmp x; x.cross = true; compare_fragment(x, a, read_yft(write_yft(a, other(game)))); if (x.diffs) c.fail("cross: " + x.first_diff); }
             check_cloth_drawables(c, file, "original");
             check_cloth_drawables(c, w, "written");
         } else if (ext == ".ymt") {
@@ -796,6 +986,7 @@ int main(int argc, char** argv) {
         const std::string a = argv[i];
         if (a.rfind("--only=", 0) == 0) only = "," + lower(a.substr(7)) + ",";
         else if (a == "--game") use_game = true;
+        else if (a == "--cross") g_cross = true;
         else if (a.rfind("--game=", 0) == 0) { use_game = true; game = a.substr(7); }
         else if (a.rfind("--every=", 0) == 0) every = std::max<size_t>(1, std::stoul(a.substr(8)));
         else if (a.rfind("--max=", 0) == 0) max_per_ext = std::stoul(a.substr(6));

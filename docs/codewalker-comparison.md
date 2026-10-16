@@ -13,6 +13,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | RPF7 archive | read, write (create, add/replace/delete/rename entries, defragment, encrypt AES/NG) | **yes** (read AES/NG/OPEN/none, nested archives, resources as RSC7 files; write none/OPEN/AES, nested archives, lazy copies out of any archive) | writing NG encryption |
 | RPF2 (FiveM cache `resource.rpf`) | - | - | neither reads these |
 | Encryption keys | from the exe and the embedded `magic.dat` | from the exe and `magic.dat` (`rk rpf keys`), kept in `~/.ragekit/keys` | the NG *encryption* tables are not regenerated |
+| GTA V Enhanced (gen9) .ytd .ydr .ydd .yft | read; write by converting Legacy files (`Gen9Converter`, a shader table from one sample per shader) | **yes**: read, write, Enhanced files written back keep every non-pointer byte; conversion both ways, from a table of every shader of the game's drawables (Legacy parameter lists, Enhanced layouts and values, presets, cloth layouts) | .ypt |
 
 ## Resources (RSC7)
 

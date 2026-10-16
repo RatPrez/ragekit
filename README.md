@@ -2,8 +2,8 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ratprez)
 
-A C++20 library for reading and writing the files of Grand Theft Auto V (the RAGE engine): models, textures,
-collision, map files, meta and PSO data, audio data and RPF archives. Every format is a plain struct; the only
+A C++20 library for reading and writing the files of Grand Theft Auto V (the RAGE engine), Legacy and Enhanced: models,
+textures, collision, map files, meta and PSO data, audio data and RPF archives. Every format is a plain struct; the only
 dependency, miniz (public domain), is vendored; nothing ties it to any particular tool.
 
 ragekit is not affiliated with or endorsed by Rockstar Games or Take-Two Interactive. It contains no game data: you work
@@ -24,6 +24,7 @@ third_party/miniz  deflate (public domain)
 | Format | Read | Write | Notes |
 |---|---|---|---|
 | RSC7 resources | yes | yes | the container of every streamed asset; its own page layout (`rsc.h`) |
+| GTA V Enhanced | yes | yes | the gen9 .ytd/.ydr/.ydd/.yft, read and written alongside Legacy's; conversion both ways ([docs/enhanced.md](docs/enhanced.md)) |
 | .ytd textures | yes | yes | every DXT/BC/uncompressed format decoded to RGBA; DXT1/5, BC4/5 and uncompressed encoded; DDS and PNG |
 | .ydr drawables, .ydd dictionaries | yes | yes | shaders, textures, skeleton, joints, LODs, lights, embedded collision |
 | .ybn collision | yes | yes | every bound type, BVH read and build, meshes from triangles |
@@ -105,6 +106,7 @@ rsc::write_file("prop_copy.ydr", write_ydr(d));
 - [Getting started](docs/getting-started.md): building, using it from CMake, conventions, keys
 - [RSC7 resources](docs/resources.md): the container, page flags, building resources, the page layout
 - [Models, textures and collision](docs/models-and-textures.md): ytd, ydr, ydd, ybn, yft, CodeWalker XML, glTF
+- [GTA V Enhanced](docs/enhanced.md): choosing the edition, what differs, converting between Legacy and Enhanced
 - [Map files](docs/maps.md): the meta container, ytyp and ymap, occluders
 - [PSO, RBF, XML data, manifests and audio](docs/pso-and-audio.md): PSO and RBF files, `.meta` XML, `_manifest.ymf`, `.rel`, interior audio
 - [RPF archives](docs/archives.md): reading, keys, writing
@@ -125,7 +127,6 @@ same CodeWalker XML. These tests do not run the game itself. See [docs/testing.m
 
 - Writing NG-encrypted archives.
 - Typed models for the common PSO files (carcols, carvariations, peds ...).
-- GTA V Enhanced (the gen9 formats).
 - Animations (.ycd), navmeshes, path nodes and the other formats [docs/codewalker-comparison.md](docs/codewalker-comparison.md)
   lists as gaps.
 

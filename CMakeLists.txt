@@ -22,11 +22,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(ragekit STATIC
+    src/game.cpp
     src/hash.cpp
     src/rsc.cpp
     src/texture.cpp
     src/image.cpp
     src/drawable.cpp
+    src/shader_gen9.cpp
     src/bounds.cpp
     src/cloth.cpp
     src/fragment.cpp
@@ -100,6 +102,11 @@ if (RAGEKIT_BUILD_TESTS)
     target_link_libraries(rk_texenc_test PRIVATE ragekit)
     add_executable(rk_occluder_test tests/occluder_test.cpp)   # box occluders, occlude models, entities removed from a ymap
     target_link_libraries(rk_occluder_test PRIVATE ragekit)
+    add_executable(rk_gen9_test tests/gen9_test.cpp)   # Legacy <-> Enhanced conversions against the game's own files (both installs)
+    target_link_libraries(rk_gen9_test PRIVATE ragekit)
+    target_include_directories(rk_gen9_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_executable(rk_gen_shader_table tools/gen_shader_table.cpp)   # writes src/shader_gen9.inc from a Legacy and an Enhanced install
+    target_link_libraries(rk_gen_shader_table PRIVATE ragekit)
     add_executable(rk_world_test tests/world_test.cpp)   # world index against the game install: counts, MLO instance rotation, queries
     target_link_libraries(rk_world_test PRIVATE ragekit)
 endif()

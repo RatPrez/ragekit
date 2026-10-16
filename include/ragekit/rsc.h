@@ -6,7 +6,9 @@
 #include <span>
 #include <string>
 #include <vector>
+#include <string_view>
 #include "error.h"
+#include "game.h"
 #include "types.h"
 
 namespace rk::rsc {
@@ -19,8 +21,16 @@ constexpr uint64_t kMinPageSize = 0x2000;  // the game's own files never use a s
 
 enum Version : int {
     kYtd = 13, kYbn = 43, kYft = 162, kYdr = 165, kYdd = 165, kYcd = 46, kYmap = 2, kYtyp = 2,
-    kYnv = 2, kYpt = 68, kYed = 25, kYld = 8, kYfd = 4
+    kYnv = 2, kYpt = 68, kYed = 25, kYld = 8, kYfd = 4,
+    // GTA V Enhanced (game.h): the types whose layout differs carry versions of their own
+    kYtdGen9 = 5, kYdrGen9 = 159, kYddGen9 = 159, kYftGen9 = 171, kYptGen9 = 71
 };
+
+/// The edition a resource version belongs to, for a file type (".ydr" or "ydr", any case): Enhanced for ytd 5, ydr and
+/// ydd 159 (and the few ydr 154 of the game), yft 171, ypt 71; Legacy for everything else, which the editions share.
+Game game_of(std::string_view type, int version);
+/// The version a file type is written with for an edition (ytd 13 / 5 ...); 0 for a type ragekit does not know.
+int version_for(std::string_view type, Game g);
 
 // Page classes, largest first: class i holds pages of base << (8 - i).
 struct PageFlags {
@@ -69,6 +79,11 @@ struct BlockId {
 // The first system block is the root (system offset 0). build() lays the blocks out in the fewest bytes of pages.
 class Builder {
 public:
+    /// The edition the structures are laid out for (game.h); the format writers read it.
+    Game game() const { return game_; }
+    void set_game(Game g) { game_ = g; }
+    bool gen9() const { return game_ == Game::Enhanced; }
+
     BlockId alloc(Segment seg, size_t size, size_t align = 16);
     void resize(BlockId b, size_t size) { blocks_[b.index].bytes.resize(size); }
     uint8_t* data(BlockId b) { return blocks_[b.index].bytes.data(); }
@@ -99,6 +114,7 @@ private:
     };
     std::vector<Block> blocks_;
     BlockId pages_info_;
+    Game game_ = Game::Legacy;
     rsc::PageFlags layout(Segment seg, uint32_t max_pages, uint64_t& total);
 };
 
@@ -129,8 +145,11 @@ private:
 
 class Reader {
 public:
-    explicit Reader(const rsc::Resource& r) : res_(r) {}
+    explicit Reader(const rsc::Resource& r, Game g = Game::Legacy) : res_(r), game_(g) {}
     const rsc::Resource& resource() const { return res_; }
+    /// The edition the resource was written for (the format readers set it from the version).
+    Game game() const { return game_; }
+    bool gen9() const { return game_ == Game::Enhanced; }
 
     template <class T> T at(uint64_t ptr) const { T v; std::memcpy(&v, res_.at(ptr, sizeof(T)), sizeof(T)); return v; }
     uint8_t u8(uint64_t p) const { return at<uint8_t>(p); }
@@ -168,6 +187,7 @@ public:
 
 private:
     const rsc::Resource& res_;
+    Game game_;
 };
 
 }  // namespace rk

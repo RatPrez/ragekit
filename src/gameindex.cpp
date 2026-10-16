@@ -676,12 +676,26 @@ struct GameIndex::Impl {
 // ---------------------------------------------------------------------------------------
 // open
 
-std::string GameIndex::default_game_dir() {
+std::string GameIndex::default_game_dir() { return default_game_dir(default_game()); }
+
+std::string GameIndex::default_game_dir(Game g) {
+    if (g == Game::Enhanced) {
+        if (const char* e = std::getenv("RAGEKIT_GAME_ENHANCED")) if (*e && fs::exists(e)) return e;
+        for (const char* c : {"C:/Program Files/Rockstar Games/Grand Theft Auto V Enhanced", "C:/Program Files (x86)/Steam/steamapps/common/Grand Theft Auto V Enhanced",
+                              "C:/Program Files/Epic Games/GTAVEnhanced"})
+            if (fs::exists(fs::path(c) / "GTA5_Enhanced.exe")) return c;
+        return {};
+    }
     if (const char* e = std::getenv("RAGEKIT_GAME")) if (*e && fs::exists(e)) return e;
     for (const char* c : {"C:/Program Files/Rockstar Games/Grand Theft Auto V Legacy", "C:/Program Files/Rockstar Games/Grand Theft Auto V",
-                          "C:/Program Files (x86)/Steam/steamapps/common/Grand Theft Auto V"})
+                          "C:/Program Files (x86)/Steam/steamapps/common/Grand Theft Auto V Legacy", "C:/Program Files (x86)/Steam/steamapps/common/Grand Theft Auto V",
+                          "C:/Program Files/Epic Games/GTAV"})
         if (fs::exists(fs::path(c) / "GTA5.exe")) return c;
     return {};
+}
+
+Game GameIndex::game_of_dir(const std::string& game_dir) {
+    return fs::exists(fs::path(game_dir) / "GTA5_Enhanced.exe") && !fs::exists(fs::path(game_dir) / "GTA5.exe") ? Game::Enhanced : Game::Legacy;
 }
 
 GameIndex GameIndex::open(const std::string& game_dir_in, const GameIndexOptions& opt) {
@@ -689,13 +703,14 @@ GameIndex GameIndex::open(const std::string& game_dir_in, const GameIndexOptions
     auto say = [&](const std::string& s) { if (opt.progress) opt.progress(s); };
     std::string game = fs::path(game_dir_in).generic_string();
     while (game.size() > 1 && game.back() == '/') game.pop_back();
-    if (!fs::exists(fs::path(game) / "GTA5.exe") && !fs::exists(fs::path(game) / "x64a.rpf"))
-        throw Error("'" + game + "' does not look like a GTA V install (no GTA5.exe / x64a.rpf)");
+    if (!fs::exists(fs::path(game) / "GTA5.exe") && !fs::exists(fs::path(game) / "GTA5_Enhanced.exe") && !fs::exists(fs::path(game) / "x64a.rpf"))
+        throw Error("'" + game + "' does not look like a GTA V install (no GTA5.exe / GTA5_Enhanced.exe / x64a.rpf)");
 
     GameIndex gi;
     gi.d_ = std::make_shared<Impl>();
     Impl& d = *gi.d_;
     d.info.game_dir = game;
+    d.info.game = game_of_dir(game);
     d.info.exe_version = read_exe_version(game);
 
     // cache key: format, folder, exe, every archive's size and time
@@ -710,7 +725,7 @@ GameIndex GameIndex::open(const std::string& game_dir_in, const GameIndexOptions
         auto tm = fs::last_write_time(p, ec).time_since_epoch().count();
         return std::to_string(sz) + ":" + std::to_string((long long)tm);
     };
-    key = fnv(key, stat_str(fs::path(game) / "GTA5.exe"));
+    key = fnv(key, stat_str(fs::path(game) / (d.info.game == Game::Enhanced ? "GTA5_Enhanced.exe" : "GTA5.exe")));
     for (auto& t : tops) key = fnv(fnv(key, t.rel), stat_str(fs::path(game) / t.rel));
     char keybuf[32];
     std::snprintf(keybuf, sizeof keybuf, "%016llx", (unsigned long long)key);

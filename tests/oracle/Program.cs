@@ -62,6 +62,11 @@ foreach (var path in args)
     try
     {
         var data = File.ReadAllBytes(path);
+        // GTA V Enhanced resources (ytd 5, ydr/ydd 159, yft 171): CodeWalker reads them with RpfManager.IsGen9 set
+        var rscVersion = data.Length >= 8 && BitConverter.ToUInt32(data, 0) == 0x37435352 ? BitConverter.ToInt32(data, 4) : 0;
+        var lowerName = path.ToLowerInvariant();
+        RpfManager.IsGen9 = (lowerName.EndsWith(".ytd") && rscVersion == 5) || ((lowerName.EndsWith(".ydr") || lowerName.EndsWith(".ydd")) && (rscVersion == 159 || rscVersion == 154))
+                            || (lowerName.EndsWith(".yft") && rscVersion == 171);
         var lower = path.ToLowerInvariant();
         if (lower.EndsWith(".ytyp") || lower.EndsWith(".ymap"))
         {
@@ -86,13 +91,14 @@ foreach (var path in args)
         else if (lower.EndsWith(".ydr"))
         {
             var ydr = RpfFile.GetResourceFile<YdrFile>(data);
-            var d = ydr.Drawable;
-            Console.WriteLine($"ok   {Path.GetFileName(path)}: drawable '{d.Name}' shaders {d.ShaderGroup?.Shaders?.data_items?.Length ?? 0} textures {d.ShaderGroup?.TextureDictionary?.Textures?.data_items?.Length ?? 0} high models {d.DrawableModels?.High?.Length ?? 0}");
-            foreach (var m in d.AllModels)
-                foreach (var g in m.Geometries)
-                    Console.WriteLine($"       geom: {g.VerticesCount} verts {g.IndicesCount} indices shader {g.ShaderID} ({g.Shader?.Name}) decl {g.VertexBuffer?.Info?.Flags} stride {g.VertexStride}");
-            if (d.Bound != null) Console.WriteLine($"       bound {d.Bound.Type}");
-            if (!string.IsNullOrEmpty(d.ErrorMessage)) { Console.WriteLine("       ERROR " + d.ErrorMessage); failures++; }
+            Console.WriteLine($"ok   {Path.GetFileName(path)}:");
+            if (!DescribeDrawable(ydr.Drawable)) failures++;
+        }
+        else if (lower.EndsWith(".ydd"))
+        {
+            var ydd = RpfFile.GetResourceFile<YddFile>(data);
+            Console.WriteLine($"ok   {Path.GetFileName(path)}: {ydd.Drawables?.Length ?? 0} drawables");
+            if (ydd.Drawables != null) foreach (var d in ydd.Drawables) if (!DescribeDrawable(d)) failures++;
         }
         else if (lower.EndsWith(".ybn"))
         {
@@ -128,7 +134,7 @@ foreach (var path in args)
         {
             var ytd = RpfFile.GetResourceFile<YtdFile>(data);
             Console.WriteLine($"ok   {Path.GetFileName(path)}: {ytd.TextureDict?.Textures?.data_items?.Length} textures");
-            foreach (var t in ytd.TextureDict.Textures.data_items) Console.WriteLine($"       {t.Name} {t.Width}x{t.Height} {t.Format} levels {t.Levels} {t.Data?.FullData?.Length} bytes");
+            foreach (var t in ytd.TextureDict.Textures.data_items) Console.WriteLine($"       {t.Name} {t.Width}x{t.Height} {t.Format} levels {t.Levels} {t.Data?.FullData?.Length} bytes usage {t.Usage} data {Fnv(t.Data?.FullData):X16}");
         }
         else if (lower.EndsWith(".ytyp.xml") || lower.EndsWith(".ymap.xml"))
         {
@@ -172,3 +178,44 @@ foreach (var path in args)
     }
 }
 return failures;
+
+// FNV-1a of a byte array (0 for none)
+static ulong Fnv(byte[] b)
+{
+    if (b == null) return 0;
+    ulong h = 1469598103934665603;
+    foreach (var x in b) { h ^= x; h *= 1099511628211; }
+    return h;
+}
+
+// A drawable as CodeWalker sees it: shaders with their parameters (Legacy names, values, textures), every geometry with
+// hashes of its vertices (CodeWalker's Legacy order) and indices, skeleton, lights, bound. Errors return false.
+static bool DescribeDrawable(DrawableBase d)
+{
+    if (d == null) { Console.WriteLine("       (null drawable)"); return true; }
+    Console.WriteLine($"       drawable '{(d as Drawable)?.Name}' shaders {d.ShaderGroup?.Shaders?.data_items?.Length ?? 0} textures {d.ShaderGroup?.TextureDictionary?.Textures?.data_items?.Length ?? 0} models {d.AllModels?.Length ?? 0} bones {d.Skeleton?.Bones?.Items?.Length ?? 0} lights {(d as Drawable)?.LightAttributes?.data_items?.Length ?? 0}");
+    var shaders = d.ShaderGroup?.Shaders?.data_items;
+    if (shaders != null)
+        foreach (var s in shaders)
+        {
+            var line = $"       shader {s.Name} bucket {s.RenderBucket}:";
+            var ps = s.ParametersList?.Parameters; var hs = s.ParametersList?.Hashes;
+            if (ps != null && hs != null)
+                for (int i = 0; i < ps.Length && i < hs.Length; i++)
+                {
+                    var v = ps[i].Data;
+                    string val = v is TextureBase tb ? "'" + tb.Name + "'" : v is SharpDX.Vector4 q ? $"({q.X} {q.Y} {q.Z} {q.W})" : v is SharpDX.Vector4[] a ? $"[{a.Length}]({string.Join(" ", a.Select(x => $"{x.X},{x.Y},{x.Z},{x.W}"))})" : "-";
+                    line += $" {(uint)hs[i]:X8}={val}";
+                }
+            Console.WriteLine(line);
+        }
+    if (d.AllModels != null)
+        foreach (var m in d.AllModels)
+            if (m.Geometries != null)
+                foreach (var g in m.Geometries)
+                    Console.WriteLine($"       geom: {g.VerticesCount} verts {g.IndicesCount} indices shader {g.ShaderID} ({g.Shader?.Name}) decl {g.VertexBuffer?.Info?.Flags} stride {g.VertexStride} vertices {Fnv(g.VertexData?.VertexBytes):X16} indices {Fnv(g.IndexBuffer?.Indices?.SelectMany(BitConverter.GetBytes).ToArray()):X16}");
+    if ((d as Drawable)?.Bound != null) Console.WriteLine($"       bound {(d as Drawable).Bound.Type}");
+    var err = (d as Drawable)?.ErrorMessage;
+    if (!string.IsNullOrEmpty(err)) { Console.WriteLine("       ERROR " + err); return false; }
+    return true;
+}

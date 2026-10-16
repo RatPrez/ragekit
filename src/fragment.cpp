@@ -328,11 +328,47 @@ private:
     std::map<std::string, BlockId> strings_;
 };
 
+// A glass window: 64 bytes, a vertex declaration (Legacy 16 bytes, Enhanced 320), then 32 bytes. Fragment keeps Legacy's.
+constexpr size_t kGlassHead = 0x40, kGlassTail = 32, kGlassSizeGen9 = kGlassHead + 320 + kGlassTail;
+
+std::array<uint8_t, 112> read_glass_gen9(const Reader& r, uint64_t ptr) {
+    std::array<uint8_t, 112> g{};
+    const uint8_t* p = r.resource().at(ptr, kGlassSizeGen9);
+    std::memcpy(g.data(), p, kGlassHead);
+    uint16_t stride = 0;
+    const VertexLayout l = layout_from_gen9(p + kGlassHead, stride);
+    set(g, 0x40, l.flags);
+    set(g, 0x44, stride);
+    set(g, 0x47, l.count());
+    set(g, 0x48, l.types);
+    std::memcpy(g.data() + 0x50, p + kGlassHead + 320, kGlassTail);
+    return g;
+}
+
+Bytes write_glass_gen9(const std::array<uint8_t, 112>& g, const std::array<uint8_t, 320>* read_decl) {
+    Bytes out(kGlassSizeGen9);
+    std::memcpy(out.data(), g.data(), kGlassHead);
+    VertexLayout l;
+    std::memcpy(&l.flags, g.data() + 0x40, 4);
+    std::memcpy(&l.types, g.data() + 0x48, 8);
+    bool same = false;
+    if (read_decl) {
+        // the declaration read keeps what a rebuilt one would not (some of the game's carry strides on unused slots)
+        uint16_t stride = 0;
+        const VertexLayout rl = layout_from_gen9(read_decl->data(), stride);
+        same = rl.flags == l.flags && rl.types == layout_gen9(l).types;
+    }
+    if (same) std::memcpy(out.data() + kGlassHead, read_decl->data(), 320);
+    else layout_to_gen9(layout_gen9(l), out.data() + kGlassHead);
+    std::memcpy(out.data() + kGlassHead + 320, g.data() + 0x50, kGlassTail);
+    return out;
+}
+
 } // namespace
 
 Fragment read_yft(std::span<const uint8_t> file) {
     rsc::Resource res = rsc::Resource::load(file);
-    Reader r(res);
+    Reader r(res, rsc::game_of("yft", res.version));
     Fragment f;
     std::map<uint64_t, BoundPtr> bounds;
     const uint64_t ptr = rsc::kSystemBase;
@@ -370,7 +406,8 @@ Fragment read_yft(std::span<const uint8_t> file) {
     }
     for (uint64_t gp : r.array<uint64_t>(glass_ptr, glass_count)) {
         if (!gp) throw Error("yft: a null glass window");
-        f.glass_windows.push_back(read_raw<112>(r, gp));
+        f.glass_windows.push_back(r.gen9() ? read_glass_gen9(r, gp) : read_raw<112>(r, gp));
+        if (r.gen9()) f.glass_declarations_gen9.push_back(read_raw<320>(r, gp + kGlassHead));
     }
     if (phys_ptr)
         for (int i = 0; i < 3; i++)
@@ -385,12 +422,20 @@ Fragment read_yft(std::span<const uint8_t> file) {
     return f;
 }
 
-Bytes write_yft(const Fragment& f) {
+Bytes write_yft(const Fragment& f, Game game) {
     if (f.drawable_array.size() != f.drawable_array_names.size()) throw Error("yft: drawable_array and drawable_array_names differ in count");
     if (f.glass_windows.size() > 255 || f.bone_transforms.size() > 255) throw Error("yft: at most 255 glass windows and 255 bone transforms");
     if (f.cloths.size() > 0xFFFF || f.lights.size() > 0xFFFF) throw Error("yft: too many cloths or lights");
     if (!f.cloths.empty() && !f.drawable_cloth && !f.drawable) throw Error("yft: a cloth needs the fragment's drawable to draw through");
+    std::vector<const Drawable*> all;
+    if (f.drawable) all.push_back(&*f.drawable);
+    if (f.drawable_cloth) all.push_back(&*f.drawable_cloth);
+    for (auto& d : f.drawable_array) all.push_back(&d);
+    for (auto& lod : f.physics)
+        if (lod) for (auto& c : lod->children) { if (c.drawable) all.push_back(&*c.drawable); if (c.drawable_damaged) all.push_back(&*c.drawable_damaged); }
+    Gen9SamplerScope samplers(all);
     Builder b;
+    b.set_game(game);
     Writer w(b);
     auto raw = f.raw;
     if (blank(raw)) {
@@ -440,7 +485,11 @@ Bytes write_yft(const Fragment& f) {
         b.pointer(root, 0xA8, bt);
     }
     std::vector<BlockId> glass;
-    for (auto& g : f.glass_windows) glass.push_back(b.array(Segment::System, g.data(), g.size()));
+    for (size_t i = 0; i < f.glass_windows.size(); i++) {
+        const auto& g = f.glass_windows[i];
+        const auto* decl = i < f.glass_declarations_gen9.size() ? &f.glass_declarations_gen9[i] : nullptr;
+        glass.push_back(b.gen9() ? b.array(Segment::System, write_glass_gen9(g, decl)) : b.array(Segment::System, g.data(), g.size()));
+    }
     b.pointer(root, 0xE0, w.pointers(glass));
     if (f.physics[0] || f.physics[1] || f.physics[2]) {
         const BlockId group = b.alloc(Segment::System, 48);
@@ -463,7 +512,7 @@ Bytes write_yft(const Fragment& f) {
         b.pointer(root, 0x110, lights);
     }
     if (!f.vehicle_glass_windows.empty()) b.pointer(root, 0x120, b.array(Segment::System, f.vehicle_glass_windows));
-    return b.build(rsc::kYft);
+    return b.build(rsc::version_for("yft", game));
 }
 
 std::vector<Fragment::Part> Fragment::visual_parts() const {

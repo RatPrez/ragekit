@@ -1,4 +1,4 @@
-// ragekit - an index of a GTA V (Legacy) install, so tools can find and pull game assets by name.
+// ragekit - an index of a GTA V install (Legacy or Enhanced), so tools can find and pull game assets by name.
 //
 // open() scans every archive (common.rpf, x64*.rpf, update/update.rpf, update2.rpf, every
 // update/x64/dlcpacks/<pack>/dlc*.rpf, and all archives nested in them), records every file entry
@@ -21,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "game.h"
 #include "types.h"
 #include "rpf.h"
 #include "map.h"
@@ -93,6 +94,7 @@ struct GameIndexOptions {
 
 struct GameIndexInfo {
     std::string game_dir;
+    Game game = Game::Legacy;          // the edition of the install (GTA5_Enhanced.exe: Enhanced)
     std::string exe_version;           // from versioninfo.txt when present
     std::string key;                   // cache key (hex)
     std::string cache_path;
@@ -110,8 +112,13 @@ public:
 
     /// Opens (or builds) the index of an install. Throws rk::Error (no keys, not a game folder).
     static GameIndex open(const std::string& game_dir, const GameIndexOptions& opt = {});
-    /// The Legacy install in the usual place (or $RAGEKIT_GAME), empty if there is none.
+    /// The install of default_game() (game.h) in the usual place, empty if there is none.
     static std::string default_game_dir();
+    /// The install of an edition in the usual place, empty if there is none: $RAGEKIT_GAME (Legacy) or
+    /// $RAGEKIT_GAME_ENHANCED (Enhanced), then the Rockstar Games, Steam and Epic folders.
+    static std::string default_game_dir(Game g);
+    /// The edition of an install folder: Enhanced when it holds GTA5_Enhanced.exe and no GTA5.exe.
+    static Game game_of_dir(const std::string& game_dir);
 
     const GameIndexInfo& info() const;
     const std::vector<IndexedArchive>& archives() const;

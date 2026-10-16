@@ -2,6 +2,8 @@
 #pragma once
 #include "ragekit/drawable.h"
 #include "ragekit/rsc.h"
+#include <map>
+#include <vector>
 #include "texture_io.h"
 
 namespace rk {
@@ -28,6 +30,24 @@ DrawableBlocks prepare_drawable(Builder& b, const Drawable& d);
 void write_drawable_base(BlockWriter& w, const Drawable& d, const DrawableBlocks& parts, Builder& b);
 /// Writes a complete 208 byte gtaDrawable block; `root` makes it the resource root.
 BlockId write_drawable(Builder& b, const Drawable& d, bool root);
+
+/// Enhanced vertex declarations (320 bytes): the Legacy layout of one (and the vertex size it gives), and the declaration
+/// of a layout whose types all have an Enhanced format (see layout_gen9).
+VertexLayout layout_from_gen9(const uint8_t* decl, uint16_t& stride);
+void layout_to_gen9(const VertexLayout& l, uint8_t* decl);
+
+/// While alive, numbers the sampler states of the shaders an Enhanced write makes from the shader table, the way the
+/// game's files number them: one number per sampler name across the file, after those of the shaders read from Enhanced.
+struct Gen9SamplerScope {
+    explicit Gen9SamplerScope(const std::vector<const Drawable*>& drawables);
+    ~Gen9SamplerScope();
+    Gen9SamplerScope(const Gen9SamplerScope&) = delete;
+    Gen9SamplerScope& operator=(const Gen9SamplerScope&) = delete;
+    std::map<uint32_t, uint8_t> numbers;
+    uint8_t next = 0;
+private:
+    Gen9SamplerScope* previous_;
+};
 
 /// Virtual table values the game's files carry (any value works; kept for small diffs).
 namespace vft {

@@ -30,6 +30,8 @@ in about four and a half minutes, all of which read back field for field.
 | `rk_audio_test` | `.rel` containers and interior audio (proxy hashes, occlusion paths); no game files needed |
 | `rk_shaderdb_test` | the shader database: rules, cache, the game's layouts |
 | `rk_world_test` | the world index against the game install: counts, MLO instance rotation, queries |
+| `rk_gen9_test` | Legacy <-> Enhanced conversions against the game's own files: every file at the same path in both installs converted each way and compared ([enhanced.md](enhanced.md)) |
+| `rk_gen_shader_table` | not a test: writes `src/shader_gen9.inc`, the shader table conversions use, from both installs |
 | `rk_xml_test` | the CodeWalker XML writers (`selftest`, and the steps of `tests/cmp_xml.sh`) |
 | `rk_build_mlo` | builds a small interior with the typed API, for the oracle |
 | `rk_ymf_full` | writes a manifest that uses every array, for CodeWalker to read back (`oracle ymf --xml`) |
@@ -42,6 +44,9 @@ checks on the game's files without one.
 `tests/oracle` is a .NET console program around CodeWalker.Core. It is a test tool only, never part of the library:
 it loads files ragekit wrote with CodeWalker's own parsers, so a file is known to mean to CodeWalker what the game's
 original means. Build it with `dotnet build -c Release tests/oracle -p:CodeWalkerCore=path\to\CodeWalker.Core.csproj`.
+GTA V Enhanced files need a CodeWalker.Core with gen9 support (2025 or later; the oracle sets `RpfManager.IsGen9` per file
+from its version). Its `.ydr`/`.ydd` summary lists every shader parameter and hashes every geometry's vertices and indices,
+and its `.ytd` summary hashes every texture's data, so two files with the same summary hold the same.
 
 ```
 oracle <file>...                        load .ydr/.ybn/.ytd/.yft/.ytyp/.ymap/.ymf files and print a summary

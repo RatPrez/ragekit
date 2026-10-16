@@ -1,6 +1,7 @@
 // ragekit - umbrella header.
 #pragma once
 #include "types.h"
+#include "game.h"
 #include "error.h"
 #include "hash.h"
 #include "rsc.h"

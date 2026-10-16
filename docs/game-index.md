@@ -2,7 +2,8 @@
 
 ## Game asset index (`gameindex.h`)
 
-`GameIndex` indexes a GTA V Legacy install so a tool can find and pull game assets by name. `GameIndex::open(game_dir)`
+`GameIndex` indexes a GTA V install, Legacy or Enhanced (`info().game`; enhanced.md), so a tool can find and pull game
+assets by name. `GameIndex::open(game_dir)`
 scans every archive (`common.rpf`, `x64*.rpf`, `x64/audio/**.rpf`, `update/update.rpf`, `update2.rpf`, every
 `dlcpacks/*/dlc*.rpf` and every archive nested in them: 179 on disk and 5,199 nested on the 1.0.3889 install) and keeps:
 

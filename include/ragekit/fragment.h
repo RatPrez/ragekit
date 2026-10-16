@@ -82,7 +82,8 @@ struct Fragment {
     std::vector<std::string> drawable_array_names;
     std::vector<std::array<float, 12>> bone_transforms;   // 3 rows of 4 per bone
     uint16_t bone_transforms_unk = 0;
-    std::vector<std::array<uint8_t, 112>> glass_windows;
+    std::vector<std::array<uint8_t, 112>> glass_windows;   // as Legacy stores them; Enhanced's 320 byte declaration is converted to and from the 16 at 0x40
+    std::vector<std::array<uint8_t, 320>> glass_declarations_gen9;   // Enhanced: each window's declaration as read, written back while it gives the window's layout
     std::array<std::optional<FragPhysicsLod>, 3> physics;
     std::optional<FragDrawable> drawable_cloth;
     Bytes vehicle_glass_windows;                           // a self-contained block ("VGWH"; offsets inside are relative)
@@ -97,7 +98,9 @@ struct Fragment {
     std::vector<Part> visual_parts() const;
 };
 
+/// .yft of either edition (version 162 Legacy, 171 Enhanced).
 Fragment read_yft(std::span<const uint8_t> file);
-Bytes write_yft(const Fragment& f);
+/// A .yft for an edition (game.h); an Enhanced write needs what write_ydr does for every drawable.
+Bytes write_yft(const Fragment& f, Game game = default_game());
 
 } // namespace rk

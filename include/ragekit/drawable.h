@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include "game.h"
 #include "types.h"
 #include "texture.h"
 
@@ -30,12 +31,42 @@ struct ShaderParam {
     static ShaderParam vec(std::string_view name, Vec4 v);
 };
 
+/// One entry of an Enhanced shader's parameter table: what the parameter is and where its value lives.
+struct ShaderParamGen9 {
+    enum Kind : uint8_t { Texture = 0, Unknown = 1, Sampler = 2, Constant = 3 };
+    uint32_t name_hash = 0;      // the Enhanced name, e.g. joaat_lower("DiffuseTex"), joaat_lower("Bumpiness")
+    uint32_t data = 0;           // kind (bits 0-1); slot (2-9; constants: the buffer, 2-7); offset (8-19) and length (20-31) in bytes
+
+    Kind kind() const { return (Kind)(data & 3); }
+    uint8_t slot() const { return kind() == Constant ? (uint8_t)((data >> 2) & 0x3F) : (uint8_t)((data >> 2) & 0xFF); }
+    uint16_t offset() const { return (uint16_t)((data >> 8) & 0xFFF); }
+    uint16_t length() const { return (uint16_t)((data >> 20) & 0xFFF); }
+};
+
+/// What an Enhanced shader stores: its effect's parameter table, the constant buffers holding the values, the texture of
+/// each texture slot and the state of each sampler. Shader::params shows the same values under the Legacy names; an
+/// Enhanced write takes the values from Shader::params (so an edit there shows in both editions) and the rest from here.
+struct ShaderGen9 {
+    std::vector<ShaderParamGen9> params;   // in the effect's order
+    std::vector<uint32_t> buffer_sizes;    // bytes of each constant buffer
+    Bytes buffers;                         // the buffers' contents, one after the other
+    std::vector<std::string> textures;     // per texture slot: the bound texture's name, "" for none
+    std::vector<uint8_t> samplers;         // per sampler slot: its state
+    std::vector<uint64_t> unknowns;        // per slot of the Unknown kind (none of the game's drawables has one)
+    uint8_t copies = 12;                   // how many copies of the buffers and texture slots the block holds (12 in every file)
+
+    const ShaderParamGen9* find(uint32_t name_hash) const;
+    /// Byte offset of a constant buffer inside `buffers`.
+    uint32_t buffer_offset(uint32_t buffer) const;
+};
+
 struct Shader {
     uint32_t name_hash = 0;      // shader name hash, e.g. joaat("normal_spec")
     uint32_t sps_hash = 0;       // preset file hash, e.g. joaat("normal_spec.sps")
     uint8_t render_bucket = 0;
     uint16_t unk12 = 32768;
-    std::vector<ShaderParam> params;
+    std::vector<ShaderParam> params;   // the Legacy view, in both editions
+    std::optional<ShaderGen9> gen9;    // set by reading an Enhanced file; made from the shader table for an Enhanced write otherwise
 
     uint32_t render_bucket_mask() const { return (1u << render_bucket) | 0xFF00u; }
     const ShaderParam* find(uint32_t name_hash) const;
@@ -84,7 +115,7 @@ struct VertexLayout {
 };
 
 struct Geometry {
-    VertexLayout layout;
+    VertexLayout layout;               // Legacy's declaration; an Enhanced file's is converted to it (and back on write)
     uint32_t vertex_count = 0;
     Bytes vertices;                    // vertex_count * layout.stride()
     std::vector<uint16_t> indices;     // triangle list
@@ -93,6 +124,7 @@ struct Geometry {
     std::vector<uint16_t> bone_ids;    // skinned geometries: bone indices this geometry uses
     uint16_t vb_flags = 0;             // vertex buffer flags (0, or 1024 on some face morphs)
     bool vb_data2_only = false;        // xml: the file had the vertex data on the buffer's second data pointer only (CodeWalker's XML says <Data2>); not written back
+    uint32_t vb_bind_gen9 = 0;         // Enhanced: the vertex buffer's bind flags when neither 0x00580409 nor 0x00586409 (vb_flags 1024); 0 = from vb_flags
 
     // Typed access to vertex components (decoded/encoded per the layout's component type).
     Vec4 get(uint32_t vertex, VertexSemantic s) const;
@@ -222,10 +254,19 @@ struct DrawableDictionary {
     const Drawable* find(uint32_t hash) const;
 };
 
+/// .ydr / .ydd of either edition (the version tells them apart: 165 Legacy, 159 Enhanced).
 Drawable read_ydr(std::span<const uint8_t> file);
-Bytes write_ydr(const Drawable& d);
 DrawableDictionary read_ydd(std::span<const uint8_t> file);
-Bytes write_ydd(const DrawableDictionary& dd);
+/// Written for an edition (game.h). An Enhanced write needs each shader's Enhanced layout: the one read from an Enhanced
+/// file, else the shader table's (every shader of the game's drawables); it throws for a shader the table does not know.
+Bytes write_ydr(const Drawable& d, Game game = default_game());
+Bytes write_ydd(const DrawableDictionary& dd, Game game = default_game());
+
+/// Vertex layouts in Enhanced files use five element formats: Float3, Float4, Float2 and Colour (UByte4 for blend
+/// indices). The layout a geometry is written with in Enhanced: half floats become floats, signed normals Float3.
+VertexLayout layout_gen9(const VertexLayout& l);
+/// Converts a geometry's vertices to another layout of the same semantics (component by component; new semantics are 0).
+void convert_vertices(Geometry& g, const VertexLayout& to);
 
 /// Tangents (and Binormal) of the vertices from `first_vertex` on: dP/dU across the normal, w -1 where the UVs are mirrored.
 void compute_tangents(Geometry& g, size_t first_vertex = 0);

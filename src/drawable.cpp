@@ -3,6 +3,7 @@
 #include "ragekit/error.h"
 #include "drawable_io.h"
 #include "bounds_io.h"
+#include "shader_gen9.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -123,6 +124,152 @@ void Geometry::set(uint32_t v, VertexSemantic s, const Vec4& val) {
             break;
         default: break;
     }
+}
+
+// ---------------------------------------------------------------- Enhanced vertex declarations
+//
+// An Enhanced declaration (rage::grcFvf, 320 bytes) has 52 semantic slots: POSITION0-3, NORMAL0-3, TANGENT0-3, BINORMAL0-3,
+// BLENDWEIGHT0-3, BLENDINDICES0-3, COLOR0-3, TEXCOORD0-23; per slot an offset (u32), a stride (u8) and a DXGI format (u8),
+// then a u64 holding the vertex size at bit 2. The game's files lay the used slots out in slot order, each with the
+// vertex size as its stride, and give an unused slot the running offset; that is what layout_to_gen9 writes.
+
+namespace {
+
+constexpr int kGen9Slot[16] = {0, 16, 20, 4, 24, 25, 28, 29, 30, 31, 32, 33, 34, 35, 8, 12};   // by VertexSemantic
+constexpr uint8_t kFmtFloat4 = 2, kFmtFloat3 = 6, kFmtHalf4 = 10, kFmtFloat2 = 16, kFmtUnorm4 = 28, kFmtUint4 = 30,
+                  kFmtSnorm4 = 31, kFmtHalf2 = 34, kFmtFloat1 = 41;
+
+uint8_t gen9_format(VertexSemantic s, VertexComponentType t) {
+    switch (t) {
+        case VertexComponentType::Float3: return kFmtFloat3;
+        case VertexComponentType::Float4: return kFmtFloat4;
+        case VertexComponentType::Float2: return kFmtFloat2;
+        case VertexComponentType::Colour: return s == VertexSemantic::BlendIndices ? kFmtUint4 : kFmtUnorm4;
+        case VertexComponentType::UByte4: return kFmtUint4;
+        case VertexComponentType::Half2: return kFmtHalf2;
+        case VertexComponentType::Half4: return kFmtHalf4;
+        case VertexComponentType::RGBA8SNorm: return kFmtSnorm4;
+        case VertexComponentType::Float: return kFmtFloat1;
+        default: return 0;
+    }
+}
+
+VertexComponentType legacy_type(VertexSemantic s, uint8_t fmt) {
+    switch (fmt) {
+        case kFmtFloat3: return VertexComponentType::Float3;
+        case kFmtFloat4: return VertexComponentType::Float4;
+        case kFmtFloat2: return VertexComponentType::Float2;
+        case kFmtUnorm4: return VertexComponentType::Colour;
+        case kFmtUint4: return s == VertexSemantic::BlendIndices ? VertexComponentType::Colour : VertexComponentType::UByte4;
+        case kFmtHalf2: return VertexComponentType::Half2;
+        case kFmtHalf4: return VertexComponentType::Half4;
+        case kFmtSnorm4: return VertexComponentType::RGBA8SNorm;
+        case kFmtFloat1: return VertexComponentType::Float;
+        default: return VertexComponentType::Nothing;
+    }
+}
+
+uint64_t with_type(uint64_t types, int s, VertexComponentType t) {
+    return (types & ~(0xFull << (s * 4))) | ((uint64_t)t << (s * 4));
+}
+
+}   // namespace
+
+VertexLayout layout_gen9(const VertexLayout& l) {
+    VertexLayout o = l;
+    for (int s = 0; s < 16; s++) {
+        if (!((l.flags >> s) & 1)) continue;
+        const auto sem = (VertexSemantic)s;
+        switch (l.type_of(sem)) {
+            case VertexComponentType::Half2: case VertexComponentType::Float: o.types = with_type(o.types, s, VertexComponentType::Float2); break;
+            case VertexComponentType::Half4: case VertexComponentType::FloatUnk: o.types = with_type(o.types, s, VertexComponentType::Float4); break;
+            case VertexComponentType::RGBA8SNorm:
+                o.types = with_type(o.types, s, sem == VertexSemantic::Normal ? VertexComponentType::Float3 : VertexComponentType::Float4);
+                break;
+            default: break;
+        }
+    }
+    return o;
+}
+
+void convert_vertices(Geometry& g, const VertexLayout& to) {
+    if (g.layout.flags == to.flags && g.layout.types == to.types) return;
+    Geometry n;
+    n.layout = to;
+    n.resize_vertices(g.vertex_count);
+    for (uint32_t v = 0; v < g.vertex_count; v++)
+        for (int s = 0; s < 16; s++)
+            if ((to.flags >> s) & 1) n.set(v, (VertexSemantic)s, g.get(v, (VertexSemantic)s));
+    g.layout = to;
+    g.vertices = std::move(n.vertices);
+}
+
+/// The Legacy layout of an Enhanced declaration: the standard type table with the types of the declaration's formats.
+VertexLayout layout_from_gen9(const uint8_t* decl, uint16_t& stride) {
+    VertexLayout l;
+    l.types = VertexLayout::kTypesStandard;
+    const uint8_t* formats = decl + 260;
+    for (int s = 0; s < 16; s++) {
+        const uint8_t f = formats[kGen9Slot[s]];
+        if (!f) continue;
+        const auto sem = (VertexSemantic)s;
+        const VertexComponentType t = legacy_type(sem, f);
+        if (t == VertexComponentType::Nothing) throw Error("vertex declaration: element format " + std::to_string(f) + " is not known");
+        l.flags |= 1u << s;
+        if (l.type_of(sem) != t) l.types = with_type(l.types, s, t);
+    }
+    for (int i = 0; i < 52; i++) {
+        bool known = false;
+        for (int s = 0; s < 16; s++) known |= kGen9Slot[s] == i;
+        if (formats[i] && !known) throw Error("vertex declaration: slot " + std::to_string(i) + " has no Legacy semantic");
+    }
+    uint64_t d;
+    std::memcpy(&d, decl + 312, 8);
+    stride = (uint16_t)((d >> 2) & 0xFF);
+    return l;
+}
+
+/// The Enhanced declaration of a layout whose types all have an Enhanced format (layout_gen9).
+void layout_to_gen9(const VertexLayout& l, uint8_t* decl) {
+    std::memset(decl, 0, 320);
+    const uint16_t stride = l.stride();
+    uint32_t off = 0;
+    for (int i = 0; i < 52; i++) {
+        std::memcpy(decl + 4 * i, &off, 4);
+        for (int s = 0; s < 16; s++) {
+            if (kGen9Slot[s] != i || !((l.flags >> s) & 1)) continue;
+            const auto sem = (VertexSemantic)s;
+            const uint8_t f = gen9_format(sem, l.type_of(sem));
+            if (!f) throw Error("vertex layout: no Enhanced format for the type of semantic " + std::to_string(s));
+            decl[208 + i] = (uint8_t)stride;
+            decl[260 + i] = f;
+            off += vertex_component_size(l.type_of(sem));
+        }
+    }
+    const uint64_t d = (uint64_t)(stride & 0xFF) << 2;
+    std::memcpy(decl + 312, &d, 8);
+}
+
+/// Offset of a semantic inside an Enhanced vertex (components in slot order).
+static uint32_t gen9_offset(const VertexLayout& l, VertexSemantic s) {
+    uint32_t off = 0;
+    for (int k = 0; k < 16; k++)
+        if (((l.flags >> k) & 1) && kGen9Slot[k] < kGen9Slot[(int)s]) off += vertex_component_size(l.type_of((VertexSemantic)k));
+    return off;
+}
+
+/// Reorders vertices between Legacy's component order and Enhanced's.
+Bytes reorder_vertices(const VertexLayout& l, const uint8_t* src, uint32_t count, bool to_gen9) {
+    const uint32_t stride = l.stride();
+    Bytes out((size_t)count * stride);
+    for (int s = 0; s < 16; s++) {
+        if (!((l.flags >> s) & 1)) continue;
+        const auto sem = (VertexSemantic)s;
+        const uint32_t lo = l.offset_of(sem), go = gen9_offset(l, sem), n = vertex_component_size(l.type_of(sem));
+        const uint32_t from = to_gen9 ? lo : go, to = to_gen9 ? go : lo;
+        for (uint32_t v = 0; v < count; v++) std::memcpy(out.data() + (size_t)v * stride + to, src + (size_t)v * stride + from, n);
+    }
+    return out;
 }
 
 void Geometry::resize_vertices(uint32_t count) {
@@ -269,6 +416,24 @@ VertexLayout read_layout(const Reader& r, uint64_t ptr) {
     return l;
 }
 
+// Enhanced vertex buffer (64 bytes): vertex count, stride, bind flags, data, a shader resource view and the declaration.
+void read_vertex_buffer_gen9(const Reader& r, uint64_t vb, Geometry& g) {
+    const uint32_t vcount = r.u32(vb + 8);
+    const uint16_t vstride = r.u16(vb + 12);
+    const uint32_t bind = r.u32(vb + 0x10);
+    const uint64_t data = r.u64(vb + 0x18), decl = r.u64(vb + 0x38);
+    // Legacy's flag 1024 (face morph targets) is the 0x6000 of Enhanced's bind flags: 0x00586409 instead of 0x00580409
+    if (bind == 0x00586409) g.vb_flags = 1024;
+    g.vb_bind_gen9 = bind == 0x00580409 || bind == 0x00586409 ? 0 : bind;
+    if (!decl) throw Error("vertex buffer without a declaration");
+    uint16_t dstride = 0;
+    g.layout = layout_from_gen9(r.resource().at(decl, 320), dstride);
+    if (g.layout.stride() != vstride || dstride != vstride) throw Error("geometry vertex stride does not match its declaration");
+    g.vertex_count = vcount;
+    const size_t n = (size_t)vcount * vstride;
+    g.vertices = n ? reorder_vertices(g.layout, r.resource().at(data, n), vcount, false) : Bytes{};
+}
+
 Geometry read_geometry(const Reader& r, uint64_t ptr) {
     Geometry g;
     auto c = r.cursor(ptr + 0x18);
@@ -284,7 +449,9 @@ Geometry read_geometry(const Reader& r, uint64_t ptr) {
     uint16_t stride = c.u16();          // 0x70
     uint16_t bone_ids_count = c.u16();
     g.bone_ids = r.array<uint16_t>(bone_ids_ptr, bone_ids_count);
-    if (vb_ptr) {
+    if (vb_ptr && r.gen9()) {
+        read_vertex_buffer_gen9(r, vb_ptr, g);
+    } else if (vb_ptr) {
         auto v = r.cursor(vb_ptr + 8);
         uint16_t vstride = v.u16();
         g.vb_flags = v.u16();
@@ -306,7 +473,8 @@ Geometry read_geometry(const Reader& r, uint64_t ptr) {
     }
     if (ib_ptr) {
         uint32_t n = r.u32(ib_ptr + 8);
-        uint64_t ip = r.u64(ib_ptr + 0x10);
+        if (r.gen9() && r.u16(ib_ptr + 12) != 2) throw Error("index buffer: " + std::to_string(r.u16(ib_ptr + 12)) + " byte indices");
+        uint64_t ip = r.u64(ib_ptr + (r.gen9() ? 0x18 : 0x10));
         if (n == 0) n = indices_count;
         g.indices = r.array<uint16_t>(ip, n);
     }
@@ -349,7 +517,43 @@ std::vector<Model> read_model_list(const Reader& r, uint64_t list_ptr) {
     return out;
 }
 
+// Enhanced shader (64 bytes): name, the preset tag, the parameter block, its texture slots, its unknown slots, the
+// parameter table; the bucket, the block's size and the bucket mask. The block holds `copies` copies of the constant
+// buffers' pointers and of the buffers, then `copies` copies of the texture slots (only the first holds pointers), the
+// unknown slots and a byte per sampler.
+Shader read_shader_gen9(const Reader& r, uint64_t ptr) {
+    Shader s;
+    s.name_hash = r.u32(ptr);
+    const uint64_t params = r.u64(ptr + 8), texrefs = r.u64(ptr + 0x10), unknowns = r.u64(ptr + 0x18), infos = r.u64(ptr + 0x20);
+    s.render_bucket = r.u8(ptr + 0x39);
+    ShaderGen9 g;
+    if (infos) {
+        const uint8_t nb = r.u8(infos), nt = r.u8(infos + 1), nu = r.u8(infos + 2), ns = r.u8(infos + 3), np = r.u8(infos + 4);
+        g.copies = r.u8(infos + 7);
+        if (g.copies == 0) throw Error("shader parameters: no copies");
+        for (uint8_t i = 0; i < np; i++) g.params.push_back({r.u32(infos + 8 + 8ull * i), r.u32(infos + 12 + 8ull * i)});
+        const auto bptrs = r.array<uint64_t>(params, (size_t)nb * g.copies);
+        for (uint8_t i = 0; i < nb; i++) {
+            const uint64_t next = i + 1u < bptrs.size() ? bptrs[i + 1u] : bptrs[i] + 16;
+            g.buffer_sizes.push_back((uint32_t)(next - bptrs[i]));
+        }
+        uint32_t bytes = 0;
+        for (auto b : g.buffer_sizes) bytes += b;
+        if (nb) g.buffers = r.bytes(bptrs[0], bytes);
+        const auto tptrs = r.array<uint64_t>(texrefs, nt);
+        for (auto t : tptrs) g.textures.push_back(read_texture_ref(r, t));
+        g.unknowns = r.array<uint64_t>(unknowns, nu);
+        const uint64_t samplers = params + (uint64_t)nb * 8 * g.copies + (uint64_t)bytes * g.copies + (uint64_t)nt * 8 * g.copies + (uint64_t)nu * 8 * g.copies;
+        g.samplers = r.bytes(samplers, ns);
+    }
+    s.params = shader_table::params_from_gen9(s.name_hash, g);
+    if (!shader_table::preset(s.name_hash, s.render_bucket, s.sps_hash, s.unk12)) s.sps_hash = 0;
+    s.gen9 = std::move(g);
+    return s;
+}
+
 Shader read_shader(const Reader& r, uint64_t ptr) {
+    if (r.gen9()) return read_shader_gen9(r, ptr);
     Shader s;
     auto c = r.cursor(ptr);
     uint64_t params_ptr = c.u64();
@@ -548,13 +752,13 @@ Drawable read_drawable(const Reader& r, uint64_t ptr) {
 
 Drawable read_ydr(std::span<const uint8_t> file) {
     rsc::Resource res = rsc::Resource::load(file);
-    Reader r(res);
+    Reader r(res, rsc::game_of("ydr", res.version));
     return read_drawable(r, rsc::kSystemBase);
 }
 
 DrawableDictionary read_ydd(std::span<const uint8_t> file) {
     rsc::Resource res = rsc::Resource::load(file);
-    Reader r(res);
+    Reader r(res, rsc::game_of("ydd", res.version));
     DrawableDictionary dd;
     uint64_t hashes_ptr = r.u64(rsc::kSystemBase + 0x20);
     uint16_t hashes_count = r.u16(rsc::kSystemBase + 0x28);
@@ -595,13 +799,74 @@ size_t model_size(const Model& m) {
     return off;
 }
 
-/// Writes a geometry struct at `off` inside block `blk` (its buffers become separate blocks).
-void write_geometry(Builder& b, BlockId blk, size_t off, const Geometry& g) {
-    uint16_t stride = g.layout.stride();
-    if (g.vertices.size() != (size_t)g.vertex_count * stride)
-        throw Error("geometry vertex data size does not match vertex_count * stride");
-    // vertex buffer
-    BlockId vb = b.alloc(Segment::System, 128);
+// A shader resource view (32 bytes) of a buffer, as Enhanced vertex and index buffers carry.
+BlockId buffer_view_gen9(Builder& b) {
+    BlockId v = b.alloc(Segment::System, 32);
+    BlockWriter w(b, v);
+    w.u64(0x1406B77D8ull);
+    w.u64(0);
+    w.u16(0x14);
+    w.u16(0xFFFF);
+    w.u32(0xFFFFFFFF);
+    return v;
+}
+
+constexpr uint32_t kVertexBufferVftGen9 = 0x406B9108, kIndexBufferVftGen9 = 0x406B90B8;
+
+/// Enhanced vertex and index buffers of a geometry; returns the vertex data block and the stride written.
+BlockId write_buffers_gen9(Builder& b, const Geometry& g, BlockId& vb, BlockId& ib, uint16_t& stride) {
+    Geometry c;
+    const Geometry* src = &g;
+    const VertexLayout l9 = layout_gen9(g.layout);
+    if (l9.types != g.layout.types) {
+        c.layout = g.layout; c.vertex_count = g.vertex_count; c.vertices = g.vertices;
+        convert_vertices(c, l9);
+        src = &c;
+    }
+    stride = l9.stride();
+    BlockId vdata = b.array(kMeshSegment, reorder_vertices(l9, src->vertices.data(), g.vertex_count, true));
+    BlockId decl = b.alloc(Segment::System, 320);
+    layout_to_gen9(l9, b.data(decl));
+    vb = b.alloc(Segment::System, 64);
+    {
+        BlockWriter w(b, vb);
+        w.u32(kVertexBufferVftGen9);
+        w.u32(1);
+        w.u32(g.vertex_count);
+        w.u16(stride);
+        w.u16(0);
+        w.u32(g.vb_bind_gen9 ? g.vb_bind_gen9 : (g.vb_flags & 1024) ? 0x00586409 : 0x00580409);
+        w.u32(0);
+        w.ptr(vdata);
+        w.u64(0);
+        w.u64(0);
+        w.ptr(buffer_view_gen9(b));
+        w.ptr(decl);
+    }
+    BlockId idata = b.array(kMeshSegment, g.indices);
+    ib = b.alloc(Segment::System, 64);
+    {
+        BlockWriter w(b, ib);
+        w.u32(kIndexBufferVftGen9);
+        w.u32(1);
+        w.u32((uint32_t)g.indices.size());
+        w.u16(2);
+        w.u16(0);
+        w.u32(0x0058020A);
+        w.u32(0);
+        w.ptr(idata);
+        w.u64(0);
+        w.u64(0);
+        w.ptr(buffer_view_gen9(b));
+        w.u64(0);
+    }
+    return vdata;
+}
+
+/// Legacy vertex buffer (128 bytes, the data on both pointers), declaration (16 bytes) and index buffer (96 bytes).
+BlockId write_buffers_legacy(Builder& b, const Geometry& g, BlockId& vb, BlockId& ib) {
+    const uint16_t stride = g.layout.stride();
+    vb = b.alloc(Segment::System, 128);
     BlockId vdata = b.array(kMeshSegment, g.vertices);
     BlockId layout = b.alloc(Segment::System, 16);
     {
@@ -626,8 +891,7 @@ void write_geometry(Builder& b, BlockId blk, size_t off, const Geometry& g) {
         w.u64(0);
         w.ptr(layout);
     }
-    // index buffer
-    BlockId ib = b.alloc(Segment::System, 96);
+    ib = b.alloc(Segment::System, 96);
     BlockId idata = b.array(kMeshSegment, g.indices);
     {
         BlockWriter w(b, ib);
@@ -637,6 +901,16 @@ void write_geometry(Builder& b, BlockId blk, size_t off, const Geometry& g) {
         w.u32(0);
         w.ptr(idata);
     }
+    return vdata;
+}
+
+/// Writes a geometry struct at `off` inside block `blk` (its buffers become separate blocks).
+void write_geometry(Builder& b, BlockId blk, size_t off, const Geometry& g) {
+    uint16_t stride = g.layout.stride();
+    if (g.vertices.size() != (size_t)g.vertex_count * stride)
+        throw Error("geometry vertex data size does not match vertex_count * stride");
+    BlockId vb, ib;
+    const BlockId vdata = b.gen9() ? write_buffers_gen9(b, g, vb, ib, stride) : write_buffers_legacy(b, g, vb, ib);
     BlockWriter w(b, blk, off);
     w.u32(vft::kGeometry);
     w.u32(1);
@@ -699,7 +973,85 @@ void write_model(Builder& b, BlockId blk, size_t off, const Model& m) {
     for (size_t i = 0; i < n; i++) write_geometry(b, blk, geom_off[i], m.geometries[i]);
 }
 
+constexpr uint32_t kShaderPresetGen9 = 0x6D657461;
+
+// The sampler states of an Enhanced file number its samplers: every file of the game gives each sampler name one number
+// (trilinearclamp 0, diffusesampler 1 ... in one file, other numbers in the next). Shaders read from Enhanced files keep
+// theirs; a shader made from the table takes the numbers the file already gives its samplers' names, and the next free
+// numbers for names the file does not have yet. Gen9SamplerScope (drawable_io.h) holds a file's numbers while it is written.
+thread_local Gen9SamplerScope* t_sampler_scope = nullptr;
+
+uint8_t sampler_number(uint32_t name, uint8_t fallback) {
+    if (!t_sampler_scope) return fallback;
+    auto& m = t_sampler_scope->numbers;
+    auto it = m.find(name);
+    if (it != m.end()) return it->second;
+    const uint8_t v = t_sampler_scope->next++;
+    m.emplace(name, v);
+    return v;
+}
+
+BlockId write_shader_gen9(Builder& b, const Shader& s) {
+    ShaderGen9 g = shader_table::gen9_for(s);
+    if (!s.gen9)
+        for (auto& p : g.params)
+            if (p.kind() == ShaderParamGen9::Sampler && p.slot() < g.samplers.size()) g.samplers[p.slot()] = sampler_number(p.name_hash, g.samplers[p.slot()]);
+    uint8_t nt = 0, nu = 0, ns = 0;
+    for (auto& p : g.params) {
+        if (p.kind() == ShaderParamGen9::Texture) nt = std::max<uint8_t>(nt, (uint8_t)(p.slot() + 1));
+        if (p.kind() == ShaderParamGen9::Unknown) nu = std::max<uint8_t>(nu, (uint8_t)(p.slot() + 1));
+        if (p.kind() == ShaderParamGen9::Sampler) ns = std::max<uint8_t>(ns, (uint8_t)(p.slot() + 1));
+    }
+    ns = std::max<uint8_t>(ns, (uint8_t)g.samplers.size());
+    const size_t nb = g.buffer_sizes.size(), copies = g.copies;
+    if (g.params.size() > 255 || nb > 255) throw Error("shader " + hash_name(s.name_hash) + ": too many Enhanced parameters");
+    const size_t bytes = g.buffers.size();
+    const size_t ptrs_len = nb * 8 * copies, bufs_len = bytes * copies, texs_len = (size_t)nt * 8 * copies, unks_len = (size_t)nu * 8 * copies;
+    const size_t total = ptrs_len + bufs_len + texs_len + unks_len + ns;
+    if (total > 0xFFFF) throw Error("shader " + hash_name(s.name_hash) + ": parameter block too large");
+    BlockId params = b.alloc(Segment::System, total);
+    {
+        BlockWriter w(b, params);
+        for (size_t c = 0; c < copies; c++) {
+            size_t at = ptrs_len + c * bytes;
+            for (size_t i = 0; i < nb; i++) { w.ptr(params, at); at += g.buffer_sizes[i]; }
+        }
+        for (size_t c = 0; c < copies; c++) if (bytes) w.bytes(g.buffers.data(), bytes);
+        for (size_t i = 0; i < nt; i++) {
+            const std::string name = i < g.textures.size() ? g.textures[i] : "";
+            if (name.empty()) w.u64(0); else w.ptr(write_texture_ref(b, name));
+        }
+        w.zero((size_t)nt * 8 * (copies - 1));
+        for (size_t i = 0; i < nu; i++) w.u64(i < g.unknowns.size() ? g.unknowns[i] : 0);
+        w.zero((size_t)nu * 8 * (copies - 1));
+        for (size_t i = 0; i < ns; i++) w.u8(i < g.samplers.size() ? g.samplers[i] : 0);
+    }
+    BlockId infos = b.alloc(Segment::System, 8 + g.params.size() * 8);
+    {
+        BlockWriter w(b, infos);
+        w.u8((uint8_t)nb); w.u8(nt); w.u8(nu); w.u8(ns); w.u8((uint8_t)g.params.size());
+        w.u8(0); w.u8(0); w.u8((uint8_t)copies);
+        for (auto& p : g.params) { w.u32(p.name_hash); w.u32(p.data); }
+    }
+    BlockId blk = b.alloc(Segment::System, 64);
+    BlockWriter w(b, blk);
+    w.u32(s.name_hash);
+    w.u32(kShaderPresetGen9);
+    w.ptr(params);
+    w.ptr(params, ptrs_len + bufs_len);
+    if (nu) w.ptr(params, ptrs_len + bufs_len + texs_len); else w.u64(0);
+    w.ptr(infos);
+    w.u64(0);
+    w.u64(0);
+    w.u8(0);
+    w.u8(s.render_bucket);
+    w.u16((uint16_t)total);
+    w.u32(s.render_bucket_mask());
+    return blk;
+}
+
 BlockId write_shader(Builder& b, const Shader& s, const TextureBlocks& textures) {
+    if (b.gen9()) return write_shader_gen9(b, s);
     size_t n = s.params.size();
     size_t base = 32;
     uint16_t param_size = 0;
@@ -778,6 +1130,8 @@ BlockId write_shader(Builder& b, const Shader& s, const TextureBlocks& textures)
     return blk;
 }
 
+constexpr uint32_t kShaderGroupVftGen9 = 0x406BB978;
+
 BlockId write_shader_group(Builder& b, const ShaderGroup& sg) {
     BlockId blk = b.alloc(Segment::System, 64);
     TextureBlocks textures;
@@ -790,7 +1144,7 @@ BlockId write_shader_group(Builder& b, const ShaderGroup& sg) {
             b.pointer(ptrs, i * 8, write_shader(b, sg.shaders[i], textures));
     }
     BlockWriter w(b, blk);
-    w.u32(vft::kShaderGroup);
+    w.u32(b.gen9() ? kShaderGroupVftGen9 : vft::kShaderGroup);
     w.u32(1);
     w.ptr(txd);
     w.ptr(ptrs);
@@ -799,7 +1153,7 @@ BlockId write_shader_group(Builder& b, const ShaderGroup& sg) {
     w.u32(0);
     w.u64(0);
     w.u64(0);
-    w.u32(64 / 16);
+    w.u32(b.gen9() ? 0 : 64 / 16);
     w.u32(0);
     w.u64(0);
     return blk;
@@ -1003,7 +1357,33 @@ void write_light(BlockWriter& w, const Light& l) {
 
 void write_light_at(BlockWriter& w, const Light& l) { write_light(w, l); }
 
-DrawableBlocks prepare_drawable(Builder& b, const Drawable& d) {
+DrawableBlocks prepare_drawable(Builder& b, const Drawable& d_in) {
+    // Legacy: geometries read from Enhanced (whose files use only floats) of shaders the game's Legacy drawables give
+    // another layout than the standard one (cloth: half floats, signed normals) get Legacy's
+    const Drawable* dp = &d_in;
+    std::optional<Drawable> converted;
+    if (!b.gen9() && d_in.shader_group) {
+        auto wants = [&](const Geometry& g, uint64_t& types) {
+            if (g.shader_index >= d_in.shader_group->shaders.size() || !d_in.shader_group->shaders[g.shader_index].gen9) return false;
+            uint64_t mask = 0;
+            for (int i = 0; i < 16; i++) if ((g.layout.flags >> i) & 1) mask |= 0xFull << (i * 4);
+            if ((g.layout.types & mask) != (VertexLayout::kTypesStandard & mask)) return false;
+            return shader_table::legacy_layout(d_in.shader_group->shaders[g.shader_index].name_hash, g.layout.flags, types);
+        };
+        uint64_t t;
+        bool any = false;
+        for (const Model* m : d_in.all_models()) for (auto& g : m->geometries) any |= wants(g, t);
+        if (any) {
+            converted = d_in;
+            auto fix = [&](std::vector<Model>& ms) {
+                for (auto& m : ms) for (auto& g : m.geometries) if (wants(g, t)) { VertexLayout l = g.layout; l.types = t; convert_vertices(g, l); }
+            };
+            for (auto& lod : converted->lods) fix(lod);
+            fix(converted->lods_extra);
+            dp = &*converted;
+        }
+    }
+    const Drawable& d = *dp;
     DrawableBlocks parts;
     if (d.shader_group) parts.shader_group = write_shader_group(b, *d.shader_group);
     if (d.skeleton) parts.skeleton = write_skeleton(b, *d.skeleton);
@@ -1087,20 +1467,44 @@ BlockId write_drawable(Builder& b, const Drawable& d, bool root) {
     return blk;
 }
 
-Bytes write_ydr(const Drawable& d) {
-    Builder b;
-    write_drawable(b, d, true);
-    return b.build(rsc::kYdr);
+Gen9SamplerScope::Gen9SamplerScope(const std::vector<const Drawable*>& drawables) : previous_(t_sampler_scope) {
+    for (const Drawable* d : drawables) {
+        if (!d || !d->shader_group) continue;
+        for (auto& s : d->shader_group->shaders) {
+            if (!s.gen9) continue;
+            for (auto& p : s.gen9->params) {
+                if (p.kind() != ShaderParamGen9::Sampler || p.slot() >= s.gen9->samplers.size()) continue;
+                const uint8_t v = s.gen9->samplers[p.slot()];
+                numbers.emplace(p.name_hash, v);
+                next = std::max<uint8_t>(next, (uint8_t)(v + 1));
+            }
+        }
+    }
+    t_sampler_scope = this;
 }
 
-Bytes write_ydd(const DrawableDictionary& dd) {
+Gen9SamplerScope::~Gen9SamplerScope() { t_sampler_scope = previous_; }
+
+Bytes write_ydr(const Drawable& d, Game game) {
+    Gen9SamplerScope samplers({&d});
+    Builder b;
+    b.set_game(game);
+    write_drawable(b, d, true);
+    return b.build(rsc::version_for("ydr", game));
+}
+
+Bytes write_ydd(const DrawableDictionary& dd, Game game) {
     if (dd.hashes.size() != dd.drawables.size()) throw Error("drawable dictionary: hashes and drawables differ in count");
     // the game keeps dictionaries sorted by hash
     std::vector<size_t> order(dd.drawables.size());
     for (size_t i = 0; i < order.size(); i++) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t c) { return dd.hashes[a] < dd.hashes[c]; });
 
+    std::vector<const Drawable*> all;
+    for (auto& d : dd.drawables) all.push_back(&d);
+    Gen9SamplerScope samplers(all);
     Builder b;
+    b.set_game(game);
     BlockId blk = b.alloc(Segment::System, 64);
     BlockId pages = b.alloc_pages_info();
     std::vector<uint32_t> hashes;
@@ -1124,7 +1528,7 @@ Bytes write_ydd(const DrawableDictionary& dd) {
     w.u16((uint16_t)hashes.size());
     w.u16((uint16_t)hashes.size());
     w.u32(0);
-    return b.build(rsc::kYdd);
+    return b.build(rsc::version_for("ydd", game));
 }
 
 namespace {

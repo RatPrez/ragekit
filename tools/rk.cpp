@@ -5,6 +5,10 @@
 //   rk roundtrip <in> <out>        read, write, read back, compare
 //   rk ytd export <ytd> <dir>      every texture as .dds and .png
 //   rk ytd build <dir> <out.ytd>   every .dds/.png in a folder into a dictionary
+//   rk convert <in> <out>          a ytd/ydr/ydd/yft written for the selected edition (--enhanced / --legacy)
+//
+// The edition (game.h) is chosen before anything loads: --enhanced or --legacy anywhere on the command line (or
+// RAGEKIT_EDITION=enhanced). Files are read in whichever edition they are; writers and the game index follow the choice.
 #include <algorithm>
 #include <array>
 #include <map>
@@ -21,9 +25,9 @@ using namespace rk;
 static std::string lower(std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; }
 static std::string ext_of(const std::string& p) { return lower(fs::path(p).extension().string()); }
 
-static void print_resource_header(const Bytes& file) {
+static void print_resource_header(const Bytes& file, const std::string& ext) {
     auto res = rsc::Resource::load(file);
-    std::printf("RSC7 version %d\n", res.version);
+    std::printf("RSC7 version %d (%s)\n", res.version, game_name(rsc::game_of(ext, res.version)));
     std::printf("  system   %9zu bytes  flags 0x%08X  pages %u  base %u\n", res.system.size(), res.system_flags.value,
                 res.system_flags.page_count(), res.system_flags.base_size());
     std::printf("  graphics %9zu bytes  flags 0x%08X  pages %u  base %u\n", res.graphics.size(), res.graphics_flags.value,
@@ -256,7 +260,7 @@ static int cmd_info(const std::string& path, bool verbose) {
         return 0;
     }
     if (!rsc::Resource::is_resource(file)) { std::printf("%s: not an RSC7 resource\n", path.c_str()); return 1; }
-    print_resource_header(file);
+    print_resource_header(file, ext_of(path));
     std::string ext = ext_of(path);
     if (ext == ".ytd") {
         auto txd = read_ytd(file);
@@ -284,10 +288,13 @@ static int cmd_info(const std::string& path, bool verbose) {
     return 0;
 }
 
+static bool g_edition_chosen = false;   // --enhanced / --legacy given: write in it; else keep each file's own
+
 static int cmd_roundtrip(const std::string& in, const std::string& out) {
     Bytes file = rsc::read_file(in);
     std::string ext = ext_of(in);
     Bytes written;
+    if (!g_edition_chosen && rsc::Resource::is_resource(file)) set_default_game(rsc::game_of(ext, rsc::Resource::load(file).version));
     if (is_pso(file)) { // binary .ymt / .ypdb
         written = write_pso(read_pso(file));
         rsc::write_file(out, written);
@@ -895,14 +902,42 @@ static int cmd_occlusion(const std::vector<std::string>& args) {
 }
 int cmd_gameindex(const std::string& cmd, const std::vector<std::string>& args); // tools/rk_gameindex.cpp
 
+static int cmd_convert(const std::string& in, const std::string& out) {
+    const Bytes file = rsc::read_file(in);
+    const std::string ext = ext_of(in);
+    const Game to = default_game();
+    Bytes written;
+    if (ext == ".ytd") written = write_ytd(read_ytd(file), to);
+    else if (ext == ".ydr") written = write_ydr(read_ydr(file), to);
+    else if (ext == ".ydd") written = write_ydd(read_ydd(file), to);
+    else if (ext == ".yft") written = write_yft(read_yft(file), to);
+    else { std::printf("%s: the editions share this file type; nothing to convert\n", in.c_str()); return 1; }
+    rsc::write_file(out, written);
+    const int from = rsc::Resource::load(file).version;
+    std::printf("%s: %s (version %d) -> %s (version %d), %zu bytes\n", fs::path(in).filename().string().c_str(), game_name(rsc::game_of(ext, from)), from,
+                game_name(to), rsc::Resource::load(written).version, written.size());
+    return 0;
+}
+
 int main(int argc, char** argv) {
     try {
-        std::string cmd = argc > 1 ? argv[1] : "";
+        if (const char* e = std::getenv("RAGEKIT_EDITION")) if (auto g = game_from_name(e)) { set_default_game(*g); g_edition_chosen = true; }
+        std::string cmd;
         bool verbose = false;
         std::vector<std::string> args;
-        for (int i = 2; i < argc; i++) {
-            if (std::strcmp(argv[i], "-v") == 0) verbose = true;
-            else args.push_back(argv[i]);
+        for (int i = 1; i < argc; i++) {
+            const std::string a = argv[i];
+            if (a == "--enhanced" || a == "--gen9") { set_default_game(Game::Enhanced); g_edition_chosen = true; }
+            else if (a == "--legacy" || a == "--gen8") { set_default_game(Game::Legacy); g_edition_chosen = true; }
+            else if (a.rfind("--edition=", 0) == 0) {
+                auto g = game_from_name(a.substr(10));
+                if (!g) throw Error("--edition takes legacy or enhanced");
+                set_default_game(*g);
+                g_edition_chosen = true;
+            }
+            else if (cmd.empty()) cmd = a;
+            else if (a == "-v") verbose = true;
+            else args.push_back(a);
         }
         if (cmd == "psodump" && !args.empty()) {
             size_t max_items = 0; bool flat = false;
@@ -918,6 +953,10 @@ int main(int argc, char** argv) {
         if (cmd == "info" && args.size() == 1) return cmd_info(args[0], verbose);
         if (cmd == "dump" && args.size() == 1) return cmd_info(args[0], true);
         if (cmd == "roundtrip" && args.size() == 2) return cmd_roundtrip(args[0], args[1]);
+        if (cmd == "convert" && args.size() == 2) {
+            if (!g_edition_chosen) throw Error("rk convert: choose the edition to write with --enhanced or --legacy");
+            return cmd_convert(args[0], args[1]);
+        }
         if (cmd == "metaout" && (args.size() == 2 || (args.size() == 3 && args[2] == "--generic"))) return cmd_metaout(args[0], args[1], args.size() == 3);
         if (cmd == "ytd" && args.size() == 3 && args[0] == "export") return cmd_ytd_export(args[1], args[2]);
         if (cmd == "ytd" && args.size() == 3 && args[0] == "build") return cmd_ytd_build(args[1], args[2]);
@@ -932,7 +971,8 @@ int main(int argc, char** argv) {
             int rc = cmd_gameindex(cmd, a);
             if (rc != 2) return rc;
         }
-        std::printf("usage:\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
+        std::printf("usage (any command takes --enhanced or --legacy: the edition written and the install the index opens; default legacy):\n"
+                    "  rk convert <in.ytd|ydr|ydd|yft> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
                     "  rk gltf <ydr|ydd|yft> <out.glb> [textures.ytd ...] [--all-lods] [--no-textures]\n"
                     "  rk rpf ls <file.rpf> [path] [-r] [--nested] [--tsv [--hash]]\n  rk rpf cat <file.rpf> <entry path> <out>\n  rk rpf extract <file.rpf> <out dir> [path] [--nested]\n"
                     "  rk rpf keys <GTA5.exe> [key folder] [--magic <magic.dat>]\n  rk rpf pack <dir> <out.rpf> [--aes]\n  rk rpf add <rpf> <entry path> <file>\n"

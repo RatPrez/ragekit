@@ -2,7 +2,11 @@
 
 `rk` (`tools/rk.cpp`, built with `RAGEKIT_BUILD_CLI`) puts most of the library on the command line.
 
+Every command takes `--enhanced` or `--legacy` (or `RAGEKIT_EDITION`): the edition written and the install the index
+opens ([enhanced.md](enhanced.md)). Without it, files are written back in their own edition and the index opens Legacy.
+
 ```
+rk convert <in> <out> --enhanced|--legacy   a .ytd/.ydr/.ydd/.yft written for the other edition
 rk info <file> [-v]                    header, segments, contents (.ytyp/.ymap: structure infos and blocks; RBF: the tree)
 rk roundtrip <in> <out>                read, write, read back
 rk psodump [--max N] [--flat] <file>   a text dump of a PSO file (binary .ymt, .ypdb, .ymf ...); info -v lists its sections and schema

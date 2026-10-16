@@ -7,7 +7,8 @@ writes the container; the format headers (`drawable.h`, `texture.h` ...) sit on 
 
 ```
 0   u32  magic "RSC7" (0x37435352)
-4   u32  version (the file type's number: ydr 165, ytd 13, ybn 43, ytyp/ymap 2 ...; rsc::Version)
+4   u32  version (the file type's number: ydr 165, ytd 13, ybn 43, ytyp/ymap 2 ...; rsc::Version; GTA V Enhanced's
+         .ytd .ydr .ydd .yft have their own, 5 159 159 171: enhanced.md)
 8   u32  system segment page flags
 12  u32  graphics segment page flags
 16  ...  raw deflate stream: the system segment, then the graphics segment
