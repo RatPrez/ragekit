@@ -735,6 +735,10 @@ static void check_gen9_bytes(Cmp& c, const std::string& ext, const Bytes& origin
             for (uint16_t k = 0; k < n; k++)
                 if (b.u32(b.u64(root + 0x20) + 4ull * k) == h) { w.where = hash_name(h) + ": "; w.drawable(a.u64(a.u64(root + 0x30) + 8ull * i), b.u64(b.u64(root + 0x30) + 8ull * k)); break; }
         }
+    } else if (ext == ".ypt") {
+        w.txd(a.u64(root + 0x20), b.u64(root + 0x20));
+        const uint64_t da = a.u64(root + 0x30), db = b.u64(root + 0x30);
+        for (uint16_t i = 0; da && db && i < a.u16(da + 0x38); i++) { w.where = "drawable " + std::to_string(i) + ": "; w.drawable(a.u64(a.u64(da + 0x30) + 8ull * i), b.u64(b.u64(db + 0x30) + 8ull * i)); }
     } else if (ext == ".yft") {
         for (size_t at : {0x30, 0xF8}) { w.where = at == 0x30 ? "drawable: " : "cloth drawable: "; w.drawable(a.u64(root + at), b.u64(root + at)); }
         const uint64_t aa = a.u64(root + 0x38), ab = b.u64(root + 0x38);
@@ -754,6 +758,48 @@ static void check_gen9_bytes(Cmp& c, const std::string& ext, const Bytes& origin
             }
         }
     }
+}
+
+// Particle rules: the two graphs walked side by side; every block's type and bytes, every link (where it is, where it
+// leads, at which offset), texture and drawable link; a block shared in one must be shared the same way in the other.
+static void compare_ptx_block(Cmp& c, const std::shared_ptr<PtxBlock>& a, const std::shared_ptr<PtxBlock>& b, std::map<const PtxBlock*, const PtxBlock*>& pairs, const std::string& p) {
+    if ((bool)a != (bool)b) { c.fail(p + ": present in one only"); return; }
+    if (!a) return;
+    auto it = pairs.find(a.get());
+    if (it != pairs.end()) { if (it->second != b.get()) c.fail(p + ": shared differently"); return; }
+    pairs[a.get()] = b.get();
+    if (a->type != b->type) { c.fail(p + ": type"); return; }
+    if (a->type == PtxType::Root) return;
+    if (a->bytes != b->bytes) { c.fail(p + ": bytes (type " + std::to_string((int)a->type) + ")"); return; }
+    if (a->links.size() != b->links.size()) { c.fail(p + ": link count"); return; }
+    for (size_t i = 0; i < a->links.size(); i++) {
+        const auto& x = a->links[i]; const auto& y = b->links[i];
+        if (x.at != y.at || x.offset != y.offset) { c.fail(p + ": link " + std::to_string(i)); return; }
+        compare_ptx_block(c, x.to, y.to, pairs, p + "/" + std::to_string(x.at));
+    }
+    if (a->textures.size() != b->textures.size()) { c.fail(p + ": texture links"); return; }
+    for (size_t i = 0; i < a->textures.size(); i++) if (a->textures[i].at != b->textures[i].at || a->textures[i].name != b->textures[i].name) c.fail(p + ": texture link");
+    if (a->drawables.size() != b->drawables.size()) { c.fail(p + ": drawable links"); return; }
+    for (size_t i = 0; i < a->drawables.size(); i++) if (a->drawables[i].at != b->drawables[i].at || a->drawables[i].index != b->drawables[i].index) c.fail(p + ": drawable link");
+}
+
+static void compare_ypt(Cmp& c, const ParticleDictionary& a, const ParticleDictionary& b) {
+    c.eq(a.name, b.name, "ypt.name");
+    c.eq(a.textures.has_value(), b.textures.has_value(), "ypt.has_textures");
+    if (a.textures && b.textures) compare_txd(c, *a.textures, *b.textures, "ypt.txd");
+    c.eq(a.drawable_hashes, b.drawable_hashes, "ypt.drawable_hashes");
+    c.eq(a.drawables.size(), b.drawables.size(), "ypt.drawables.count");
+    for (size_t i = 0; i < a.drawables.size() && i < b.drawables.size(); i++) compare_drawable(c, a.drawables[i], b.drawables[i], "ypt.drawable[" + std::to_string(i) + "]");
+    for (int k = 0; k < 4; k++) c.eq(a.root_unk[k], b.root_unk[k], "ypt.root_unk");
+    std::map<const PtxBlock*, const PtxBlock*> pairs;
+    const PtxRuleList* la[] = {&a.particle_rules, &a.effect_rules, &a.emitter_rules};
+    const PtxRuleList* lb[] = {&b.particle_rules, &b.effect_rules, &b.emitter_rules};
+    for (int k = 0; k < 3; k++) {
+        c.eq(la[k]->hashes, lb[k]->hashes, "ypt.rules.hashes");
+        c.eq(la[k]->rules.size(), lb[k]->rules.size(), "ypt.rules.count");
+        compare_ptx_block(c, la[k]->dictionary, lb[k]->dictionary, pairs, "ypt.rules" + std::to_string(k));
+    }
+    c.eq(a.blocks().size(), b.blocks().size(), "ypt.blocks.count");
 }
 
 static bool g_cross = false;   // --cross: also write every ytd/ydr/ydd/yft in the other edition, read it and compare
@@ -894,6 +940,16 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
                 c.eq(a.hashes[order[i]], b.hashes[i], "ydd.hash");
                 compare_drawable(c, a.drawables[order[i]], b.drawables[i], "ydd[" + hash_name(a.hashes[order[i]]) + "]");
             }
+        } else if (ext == ".ypt") {
+            size_t census = 0;
+            std::string where;
+            const ParticleDictionary a = read_ypt_checked(file, &census, &where);
+            if (census) c.fail("ypt: " + std::to_string(census) + " pointer-like values the schema does not know:" + where);
+            Bytes w = write_ypt(a, game); mix(w); out_size = w.size();
+            if (rsc::game_of(ext, rsc::Resource::load(w).version) != game) c.fail("ypt: written version");
+            compare_ypt(c, a, read_ypt(w));
+            if (game == Game::Enhanced) check_gen9_bytes(c, ext, file, w);
+            if (g_cross) { Cmp x; x.cross = true; compare_ypt(x, a, read_ypt(write_ypt(a, other(game)))); if (x.diffs) c.fail("cross: " + x.first_diff); }
         } else if (ext == ".yld") {
             auto a = read_yld(file); Bytes w = write_yld(a); mix(w); out_size = w.size();
             if (rsc::Resource::load(w).version != rsc::kYld) c.fail("yld: written version");
@@ -955,7 +1011,7 @@ static bool test_file(const fs::path& path) {
 
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
-           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft";
+           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt";
 }
 
 // A file test_bytes had nothing to test in is not counted.

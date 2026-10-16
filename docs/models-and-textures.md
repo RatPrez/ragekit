@@ -8,6 +8,7 @@
 | `.ybn` collision | `bounds.h` | yes | yes |
 | `.yld` cloth dictionary | `cloth.h` | yes | yes |
 | `.yft` fragment | `fragment.h` | yes | yes |
+| `.ypt` particle effects | `particle.h` | yes | yes |
 
 ## Textures
 
@@ -160,3 +161,22 @@ library does not know (it knows every stock shader and preset name and CodeWalke
 `write_glb` exports a drawable, a fragment or a set of placed drawables as a binary glTF 2.0 file with PNG textures,
 turned from the game's Z-up to glTF's Y-up. `GltfOptions` picks the LOD, whether to embed textures, and a
 `find_texture` callback for textures the drawable takes from other dictionaries (see `examples/to_gltf.cpp`).
+
+## Particle effects
+
+`read_ypt` gives a `ParticleDictionary`: its name, texture dictionary and drawables (the ordinary structs, so an edit or a
+conversion between Legacy and Enhanced works as for `.ytd` and `.ydr`), and its three rule dictionaries: particle rules
+(behaviours, shader variables, the drawables they draw), effect rules (event emitters, evolutions, keyframe properties)
+and emitter rules (domains). The rules are some forty structures pointing at each other and into each other; ragekit keeps
+each as a `PtxBlock`, its bytes with every pointer turned into a link (to another block and an offset, to a texture of the
+dictionary by name, or to one of its drawables), laid out by a schema of every structure taken from CodeWalker's
+Particle.cs. A write lays the blocks out again and patches the links, so everything not modelled comes back as it was.
+
+```cpp
+ParticleDictionary p = read_ypt(rsc::read_file("core.ypt"));
+for (size_t i = 0; i < p.effect_rules.rules.size(); i++) std::printf("%s\n", p.effect_rules.name(i).c_str());
+rsc::write_file("core_enhanced.ypt", write_ypt(p, Game::Enhanced));
+```
+
+`read_ypt_checked` also counts the 8-byte values of the rules that look like pointers where the schema has none: zero on
+all 1,240 Legacy and 1,544 Enhanced files, each of which reads back block for block after a write in either edition.

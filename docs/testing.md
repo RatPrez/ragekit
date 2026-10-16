@@ -12,7 +12,7 @@ rk_roundtrip [--only=.ytyp,.ymap,.rel] [--record=f | --check=f] <file or directo
 rk_roundtrip --game[=install dir] [--every=N] [--max=N] [--only=...] [--record=f | --check=f]
 ```
 
-`--game` takes a sample of a GTA V install through the game index: every Nth `rel ybn ydd ydr yld yft ymap ymf ymt ytd ytyp meta xml`.
+`--game` takes a sample of a GTA V install through the game index: every Nth `rel ybn ydd ydr yld yft ypt ymap ymf ymt ytd ytyp meta xml`.
 PSO, RBF and `.rel` files must come back byte for byte, XML data files as the same document. A `.yft` is written
 with `write_yft`, read again and compared whole: drawables, physics, glass, lights and cloth.
 `--record` keeps a digest of everything written per file and `--check` compares a later run with it, so a rewrite of

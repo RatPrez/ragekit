@@ -66,7 +66,7 @@ foreach (var path in args)
         var rscVersion = data.Length >= 8 && BitConverter.ToUInt32(data, 0) == 0x37435352 ? BitConverter.ToInt32(data, 4) : 0;
         var lowerName = path.ToLowerInvariant();
         RpfManager.IsGen9 = (lowerName.EndsWith(".ytd") && rscVersion == 5) || ((lowerName.EndsWith(".ydr") || lowerName.EndsWith(".ydd")) && (rscVersion == 159 || rscVersion == 154))
-                            || (lowerName.EndsWith(".yft") && rscVersion == 171);
+                            || (lowerName.EndsWith(".yft") && rscVersion == 171) || (lowerName.EndsWith(".ypt") && rscVersion == 71);
         var lower = path.ToLowerInvariant();
         if (lower.EndsWith(".ytyp") || lower.EndsWith(".ymap"))
         {
@@ -93,6 +93,21 @@ foreach (var path in args)
             var ydr = RpfFile.GetResourceFile<YdrFile>(data);
             Console.WriteLine($"ok   {Path.GetFileName(path)}:");
             if (!DescribeDrawable(ydr.Drawable)) failures++;
+        }
+        else if (lower.EndsWith(".ypt"))
+        {
+            var ypt = RpfFile.GetResourceFile<YptFile>(data);
+            var l = ypt.PtfxList;
+            var prules = l?.ParticleRuleDictionary?.ParticleRules?.data_items;
+            var erules = l?.EffectRuleDictionary?.EffectRules?.data_items;
+            var mrules = l?.EmitterRuleDictionary?.EmitterRules?.data_items;
+            Console.WriteLine($"ok   {Path.GetFileName(path)}: '{l?.Name?.Value}' textures {l?.TextureDictionary?.Textures?.data_items?.Length ?? 0} drawables {l?.DrawableDictionary?.Drawables?.data_items?.Length ?? 0} particle rules {prules?.Length ?? 0} effect rules {erules?.Length ?? 0} emitter rules {mrules?.Length ?? 0}");
+            if (l?.TextureDictionary?.Textures?.data_items != null)
+                foreach (var t in l.TextureDictionary.Textures.data_items) Console.WriteLine($"       texture {t.Name} {t.Width}x{t.Height} {t.Format} levels {t.Levels} data {Fnv(t.Data?.FullData):X16}");
+            if (prules != null) foreach (var r in prules) Console.WriteLine($"       particle rule {r.Name?.Value} behaviours {r.AllBehaviours?.data_items?.Length ?? 0} shader {r.ShaderFile?.Value}/{r.ShaderTechnique?.Value} vars {r.ShaderVars?.data_items?.Length ?? 0} drawables {r.Drawables?.data_items?.Length ?? 0}");
+            if (erules != null) foreach (var r in erules) Console.WriteLine($"       effect rule {r.Name?.Value} emitters {r.EventEmitters?.data_items?.Count(e => e != null) ?? 0} duration {r.DurationMin}..{r.DurationMax}");
+            if (mrules != null) foreach (var r in mrules) Console.WriteLine($"       emitter rule {r.Name?.Value} domains {(r.CreationDomainObj != null ? 1 : 0)}{(r.TargetDomainObj != null ? 1 : 0)}{(r.AttractorDomainObj != null ? 1 : 0)}");
+            if (l?.DrawableDictionary?.Drawables?.data_items != null) foreach (var d in l.DrawableDictionary.Drawables.data_items) if (!DescribeDrawable(d)) failures++;
         }
         else if (lower.EndsWith(".ydd"))
         {

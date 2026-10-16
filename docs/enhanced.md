@@ -9,8 +9,9 @@ types are laid out differently, and carry versions of their own:
 | `.ytd` | 13 | 5 | the texture structure (DXGI-ordered format codes, a shader resource view) |
 | `.ydr` `.ydd` | 165 | 159 | shaders (a parameter table and constant buffers), vertex and index buffers, vertex declarations, textures |
 | `.yft` | 162 | 171 | its drawables, and the vertex declaration of each glass window |
+| `.ypt` | 68 | 71 | its textures and drawables; Enhanced effects also use one behaviour Legacy does not have |
 
-ragekit reads both editions into the same structs and writes either. (`.ypt`, 68 / 71, is not read yet.)
+ragekit reads both editions into the same structs and writes either.
 
 ## Choosing the edition
 

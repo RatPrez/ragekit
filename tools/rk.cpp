@@ -5,7 +5,7 @@
 //   rk roundtrip <in> <out>        read, write, read back, compare
 //   rk ytd export <ytd> <dir>      every texture as .dds and .png
 //   rk ytd build <dir> <out.ytd>   every .dds/.png in a folder into a dictionary
-//   rk convert <in> <out>          a ytd/ydr/ydd/yft written for the selected edition (--enhanced / --legacy)
+//   rk convert <in> <out>          a ytd/ydr/ydd/yft/ypt written for the selected edition (--enhanced / --legacy)
 //
 // The edition (game.h) is chosen before anything loads: --enhanced or --legacy anywhere on the command line (or
 // RAGEKIT_EDITION=enhanced). Files are read in whichever edition they are; writers and the game index follow the choice.
@@ -280,6 +280,17 @@ static int cmd_info(const std::string& path, bool verbose) {
         if (b) print_bound(*b, 0);
     } else if (ext == ".yft") {
         print_fragment(read_yft(file), verbose);
+    } else if (ext == ".ypt") {
+        const ParticleDictionary p = read_ypt(file);
+        std::printf("Particle dictionary '%s': %zu textures, %zu drawables, %zu particle rules, %zu effect rules, %zu emitter rules, %zu blocks\n",
+                    p.name.c_str(), p.textures ? p.textures->textures.size() : 0, p.drawables.size(), p.particle_rules.rules.size(),
+                    p.effect_rules.rules.size(), p.emitter_rules.rules.size(), p.blocks().size());
+        if (verbose) {
+            if (p.textures) for (auto& t : p.textures->textures) print_texture(t, "  ");
+            const std::pair<const char*, const PtxRuleList*> lists[] = {{"particle", &p.particle_rules}, {"effect", &p.effect_rules}, {"emitter", &p.emitter_rules}};
+            for (auto& [kind, l] : lists)
+                for (size_t i = 0; i < l->rules.size(); i++) std::printf("  %s rule %s\n", kind, l->name(i).c_str());
+        }
     } else if (ext == ".ytyp" || ext == ".ymap") {
         print_meta(read_meta(file), verbose);
     } else {
@@ -309,6 +320,7 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
     else if (ext == ".ymap") written = write_ymap(read_ymap(file));
     else if (ext == ".yft") written = write_yft(read_yft(file));
     else if (ext == ".yld") written = write_yld(read_yld(file));
+    else if (ext == ".ypt") written = write_ypt(read_ypt(file));
     else { std::printf("no writer for %s\n", ext.c_str()); return 1; }
     rsc::write_file(out, written);
     auto a = rsc::Resource::load(file), b = rsc::Resource::load(written);
@@ -322,6 +334,7 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
     else if (ext == ".ymap") read_ymap(written);
     else if (ext == ".yft") read_yft(written);
     else if (ext == ".yld") read_yld(written);
+    else if (ext == ".ypt") read_ypt(written);
     else read_ydd(written);
     return 0;
 }
@@ -911,6 +924,7 @@ static int cmd_convert(const std::string& in, const std::string& out) {
     else if (ext == ".ydr") written = write_ydr(read_ydr(file), to);
     else if (ext == ".ydd") written = write_ydd(read_ydd(file), to);
     else if (ext == ".yft") written = write_yft(read_yft(file), to);
+    else if (ext == ".ypt") written = write_ypt(read_ypt(file), to);
     else { std::printf("%s: the editions share this file type; nothing to convert\n", in.c_str()); return 1; }
     rsc::write_file(out, written);
     const int from = rsc::Resource::load(file).version;
@@ -972,7 +986,7 @@ int main(int argc, char** argv) {
             if (rc != 2) return rc;
         }
         std::printf("usage (any command takes --enhanced or --legacy: the edition written and the install the index opens; default legacy):\n"
-                    "  rk convert <in.ytd|ydr|ydd|yft> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
+                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
                     "  rk gltf <ydr|ydd|yft> <out.glb> [textures.ytd ...] [--all-lods] [--no-textures]\n"
                     "  rk rpf ls <file.rpf> [path] [-r] [--nested] [--tsv [--hash]]\n  rk rpf cat <file.rpf> <entry path> <out>\n  rk rpf extract <file.rpf> <out dir> [path] [--nested]\n"
                     "  rk rpf keys <GTA5.exe> [key folder] [--magic <magic.dat>]\n  rk rpf pack <dir> <out.rpf> [--aes]\n  rk rpf add <rpf> <entry path> <file>\n"

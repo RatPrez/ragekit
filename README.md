@@ -24,11 +24,12 @@ third_party/miniz  deflate (public domain)
 | Format | Read | Write | Notes |
 |---|---|---|---|
 | RSC7 resources | yes | yes | the container of every streamed asset; its own page layout (`rsc.h`) |
-| GTA V Enhanced | yes | yes | the gen9 .ytd/.ydr/.ydd/.yft, read and written alongside Legacy's; conversion both ways ([docs/enhanced.md](docs/enhanced.md)) |
+| GTA V Enhanced | yes | yes | the gen9 .ytd/.ydr/.ydd/.yft/.ypt, read and written alongside Legacy's; conversion both ways ([docs/enhanced.md](docs/enhanced.md)) |
 | .ytd textures | yes | yes | every DXT/BC/uncompressed format decoded to RGBA; DXT1/5, BC4/5 and uncompressed encoded; DDS and PNG |
 | .ydr drawables, .ydd dictionaries | yes | yes | shaders, textures, skeleton, joints, LODs, lights, embedded collision |
 | .ybn collision | yes | yes | every bound type, BVH read and build, meshes from triangles |
 | .yft fragments | yes | yes | vehicles, props, ped ragdolls: drawables, physics LODs (groups, children, archetypes, bounds, joints), glass, vehicle glass, lights, cloth |
+| .ypt particle effects | yes | yes | textures and drawables, and every effect, emitter and particle rule kept as read: all 2,784 game files of both editions round-trip exactly |
 | .yld cloth dictionaries | yes | yes | the simulated cloth of peds' clothing: verlet meshes, skinning, collision capsules |
 | .ytyp / .ymap | yes | yes | typed archetypes (interiors with rooms, portals, entity sets), entities, MLO instances, car generators, occluders; a lossless generic meta layer under them |
 | PSO (binary .ymt, .ypdb, .ymf) | yes | yes | byte for byte; a schema-driven walker; typed streaming manifests |

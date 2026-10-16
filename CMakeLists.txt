@@ -32,6 +32,7 @@ add_library(ragekit STATIC
     src/bounds.cpp
     src/cloth.cpp
     src/fragment.cpp
+    src/particle.cpp
     src/meta.cpp
     src/map.cpp
     src/occluder.cpp
