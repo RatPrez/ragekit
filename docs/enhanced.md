@@ -37,7 +37,11 @@ The structs are Legacy's, and what Enhanced stores beyond them is kept next to t
 Enhanced keeps every byte that is not a pointer or a vtable:
 
 - `Texture::gen9` (`TextureGen9`): the format code when it is not implied by `format` (the sRGB variants), dimension,
-  tile mode, flags and the byte at 0x23. The pixel data is the same in both editions.
+  tile mode, flags and the byte at 0x23 (0 or 0x28, the same for every texture of 98% of the files: a setting of the
+  converter, not of the image). The pixel data is the same in both editions. The usage word is grcTexture's
+  m_PhysicalSizeAndTemplateType: Legacy splits the template (type, flags, version) around the texture's physical size,
+  Enhanced keeps the template whole in bits 0-11 and a field of its own in bits 19-23; conversions carry the template bit
+  for bit.
 - `Shader::gen9` (`ShaderGen9`): the effect's parameter table (Enhanced names, kind, slot, offset, length), the
   constant buffer sizes and contents, the texture bound to each texture slot, and the sampler states.
   `Shader::params` is the Legacy view of the same shader in both editions: Legacy names, order, register slots.
