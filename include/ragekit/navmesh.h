@@ -116,7 +116,50 @@ struct NavMesh {
     /// The header's byte total: 6 per vertex, 10 per index, 48 per polygon, 28 per portal, 8 per point, 2 per leaf
     /// polygon id, 120 per sector (96 + its 32 byte data block for leaves), as the game's files have it.
     uint32_t total_bytes() const;
+
+    // ---------------------------------------------------------------- editing
+
+    /// A polygon as an edit sees it.
+    struct PolyShape {
+        NavPoly poly;                 // flags and the rest as stored (vertex count and first index are set on rebuild)
+        std::vector<Vec3> corners;    // world space, counter-clockwise seen from above
+        std::vector<NavEdge> edges;   // one per corner: the side from it to the next
+        /// The polygon of this cell the shape is, unmoved (shape() sets it): its stored corners, box, centre and sector
+        /// leaves are kept. -1 for a new or reshaped polygon: those are worked out from `corners`.
+        int32_t source = -1;
+    };
+    PolyShape shape(size_t poly) const;
+    std::vector<PolyShape> shapes() const;
+    /// Replaces the polygon list (a polygon's number is its place in `polys`) and rebuilds vertices, indices, edges
+    /// and the sector leaves' polygon lists. A reshaped polygon (source -1) gets its box (the corners in quarter metres,
+    /// towards zero, as the game computes it), its centre bytes, its portal link offset and every leaf its box reaches.
+    /// set_polys(shapes()) gives the cell back unchanged. Portals and the neighbouring cells name polygons by number:
+    /// keep numbers stable where something links to them.
+    void set_polys(const std::vector<PolyShape>& polys);
+
+    /// The cover points of every leaf can be edited in place; this renumbers the leaves' first point after.
+    void renumber_points();
+
+    /// Links that do not hold, from or to the given polygons (all of them when empty): an in-cell link must name a
+    /// polygon sharing that side whose own side links back. Drop / climb links (kind 2, or the height step bit) and
+    /// links into other cells are not checked.
+    std::vector<std::string> check_links(std::span<const uint32_t> polys = {}) const;
 };
+
+/// The 150 m navmesh cells: index x, y = floor((world - (-6000)) / 150), area id x + y*100.
+struct NavCell {
+    int x = 0, y = 0;
+    static NavCell of(float wx, float wy);
+    static NavCell of_area(uint32_t area_id) { return {(int)(area_id % 100), (int)(area_id / 100)}; }
+    uint32_t area_id() const { return (uint32_t)(x + y * 100); }
+    std::string file_name() const;   // navmesh[X*3][Y*3].ynv
+    Vec3 min() const;                // z 0
+    Vec3 max() const;
+};
+
+/// The links into other cells that differ between two copies of a cell (polygon, area, polygon there): the
+/// neighbours name this cell's border polygons by number, so an edit must leave these as they were.
+std::vector<std::string> cross_cell_changes(const NavMesh& before, const NavMesh& after, size_t max = 20);
 
 /// .ynv (version 2 in both editions).
 NavMesh read_ynv(std::span<const uint8_t> file);

@@ -3,8 +3,8 @@
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ratprez)
 
 A C++20 library for reading and writing the files of Grand Theft Auto V (the RAGE engine), Legacy and Enhanced: models,
-textures, collision, map files, meta and PSO data, audio data and RPF archives. Every format is a plain struct; the only
-dependency, miniz (public domain), is vendored; nothing ties it to any particular tool.
+textures, collision, map files, meta and PSO data, audio data and RPF archives. Every format is a plain struct; the two
+dependencies, miniz (public domain) and Clipper2 (Boost licence), are vendored; nothing ties it to any particular tool.
 
 ragekit is not affiliated with or endorsed by Rockstar Games or Take-Two Interactive. It contains no game data: you work
 on files from your own copy of the game.
@@ -17,6 +17,7 @@ docs/              how to use it, and what is known about the formats
 tools/             rk, the command line tool, and the generators of the name tables
 tests/             round trips, test programs, the CodeWalker oracle
 third_party/miniz  deflate (public domain)
+third_party/clipper2  polygon clipping for the navmesh builder (Boost licence)
 ```
 
 ## What it reads and writes
@@ -29,7 +30,7 @@ third_party/miniz  deflate (public domain)
 | .ydr drawables, .ydd dictionaries | yes | yes | shaders, textures, skeleton, joints, LODs, lights, embedded collision |
 | .ybn collision | yes | yes | every bound type, BVH read and build, meshes from triangles |
 | .yft fragments | yes | yes | vehicles, props, ped ragdolls: drawables, physics LODs (groups, children, archetypes, bounds, joints), glass, vehicle glass, lights, cloth |
-| .ynv navmeshes | yes | yes | polygons, edges and links, cover points, special links; every cell of both editions reads back exactly |
+| .ynv navmeshes | yes | yes | polygons, edges and links, cover points, special links; every cell of both editions reads back exactly; polygon editing and rebuilding an area from collision (`rk navmesh patch`) |
 | .ypt particle effects | yes | yes | textures and drawables, and every effect, emitter and particle rule kept as read: all 2,784 game files of both editions round-trip exactly |
 | .yld cloth dictionaries | yes | yes | the simulated cloth of peds' clothing: verlet meshes, skinning, collision capsules |
 | .ytyp / .ymap | yes | yes | typed archetypes (interiors with rooms, portals, entity sets), entities, MLO instances, car generators, occluders; a lossless generic meta layer under them |
@@ -108,7 +109,7 @@ rsc::write_file("prop_copy.ydr", write_ydr(d));
 - [Getting started](docs/getting-started.md): building, using it from CMake, conventions, keys
 - [RSC7 resources](docs/resources.md): the container, page flags, building resources, the page layout
 - [Models, textures and collision](docs/models-and-textures.md): ytd, ydr, ydd, ybn, yft, CodeWalker XML, glTF
-- [Navmeshes](docs/navmeshes.md): cells, polygons and links, reading and writing
+- [Navmeshes](docs/navmeshes.md): cells, polygons and links, reading and writing, editing, rebuilding an area from collision
 - [GTA V Enhanced](docs/enhanced.md): choosing the edition, what differs, converting between Legacy and Enhanced
 - [Map files](docs/maps.md): the meta container, ytyp and ymap, occluders
 - [PSO, RBF, XML data, manifests and audio](docs/pso-and-audio.md): PSO and RBF files, `.meta` XML, `_manifest.ymf`, `.rel`, interior audio
@@ -145,7 +146,8 @@ MIT (see [LICENSE](LICENSE)). The file structures were first ported from
 [CodeWalker](https://github.com/dexyfex/CodeWalker) by dexyfex and Neodymium (MIT), and ragekit's CodeWalker XML is
 written to match CodeWalker's; parts are being rewritten independently, and the credit stays in LICENSE while any
 derived code remains. The interior audio recipe follows ht_mlotool / gtav-audio-occlusion (MIT). miniz is by Rich
-Geldreich and contributors (public domain).
+Geldreich and contributors (public domain). Clipper2 is by Angus Johnson (Boost Software License 1.0,
+third_party/clipper2/LICENSE).
 
 ---
 

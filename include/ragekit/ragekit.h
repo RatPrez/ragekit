@@ -14,6 +14,7 @@
 #include "fragment.h"
 #include "particle.h"
 #include "navmesh.h"
+#include "navbuild.h"
 #include "meta.h"
 #include "map.h"
 #include "pso.h"

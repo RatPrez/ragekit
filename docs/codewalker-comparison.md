@@ -25,7 +25,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | .yft fragment | yes + XML | **yes** (drawables, physics LODs with groups, children, archetypes, bounds and joints, glass, vehicle glass, lights, environment cloth; every tenth game file round-trips field for field) | XML |
 | .ybn collision | yes + XML | **yes** (every bound type, BVH read and build, geometry builder, materials with room id); XML export | XML import; ragekit builds its own BVH trees |
 | .ycd clip dictionary (animations) | yes + XML | - | everything: clips, animations, channel packing, sequences |
-| .ynv navmesh | yes + XML + builder | **yes** (every stored value kept, so the game's cells come back exactly) | a builder; XML |
+| .ynv navmesh | yes + XML + builder | **yes** (every stored value kept, so the game's cells come back exactly), polygon editing, rebuilding an area from collision in place (numbers kept, the neighbouring cells untouched) | a whole-cell builder; XML |
 | .ynd path nodes (traffic) | yes + XML + builder | - | everything |
 | .yed expression dictionary | yes + XML | - | everything |
 | .yld cloth dictionary | yes + XML | **yes** (character cloth: controller, bridge, verlet cloth, skinning, capsule bounds); all 61 game files round-trip, every structure byte the same but vtables | XML |

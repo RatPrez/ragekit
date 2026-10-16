@@ -2,6 +2,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <set>
+#include <string>
+#include <unordered_map>
 #include "ragekit/error.h"
 #include "ragekit/rsc.h"
 
@@ -66,6 +69,209 @@ uint32_t NavMesh::total_bytes() const {
             if (s.has_data) n += 32 + (uint32_t)s.polys.size() * 2 + (uint32_t)s.points.size() * 8;
         });
     return n;
+}
+
+// ---------------------------------------------------------------- editing
+
+NavMesh::PolyShape NavMesh::shape(size_t poly) const {
+    PolyShape s;
+    if (poly >= polys.size()) return s;
+    s.poly = polys[poly];
+    s.corners = poly_vertices(poly);
+    const size_t first = s.poly.first_index, n = s.poly.vertex_count();
+    if (first + n <= edges.size()) s.edges.assign(edges.begin() + first, edges.begin() + first + n);
+    s.source = (int32_t)poly;
+    return s;
+}
+
+std::vector<NavMesh::PolyShape> NavMesh::shapes() const {
+    std::vector<PolyShape> out;
+    out.reserve(polys.size());
+    for (size_t i = 0; i < polys.size(); i++) out.push_back(shape(i));
+    return out;
+}
+
+namespace {
+void leaves_of(NavSector& s, std::vector<NavSector*>& out) {
+    if (s.has_data) out.push_back(&s);
+    for (auto& c : s.children) if (c) leaves_of(*c, out);
+}
+int16_t quarter(float v) { return (int16_t)std::clamp(std::trunc(v * 4.0f), -32768.0f, 32767.0f); }
+}   // namespace
+
+void NavMesh::set_polys(const std::vector<PolyShape>& in) {
+    if (in.size() > 0x3FFF) throw Error("ynv: at most 16383 polygons (a link names one in 14 bits)");
+    const std::vector<NavVertex> old_vertices = vertices;
+    const std::vector<uint16_t> old_indices = indices;
+    const std::vector<NavPoly> old_polys = polys;
+    std::vector<NavSector*> leaves;
+    if (sectors) leaves_of(*sectors, leaves);
+    std::vector<std::vector<uint32_t>> was_in(old_polys.size());   // original polygon -> its leaves
+    for (uint32_t l = 0; l < leaves.size(); l++)
+        for (uint16_t p : leaves[l]->polys) if (p < was_in.size()) was_in[p].push_back(l);
+
+    // the stored vertices stay where they are (a few cells hold some no polygon uses, or not in first-use order);
+    // new corners join them, and vertices an edit leaves unused go
+    std::vector<NavVertex> nv = old_vertices;
+    std::vector<uint16_t> ni;
+    std::vector<NavEdge> ne;
+    std::vector<NavPoly> np;
+    std::unordered_map<uint64_t, uint16_t> at;
+    for (size_t i = nv.size(); i-- > 0;) at[nv[i].x | (uint64_t)nv[i].y << 16 | (uint64_t)nv[i].z << 32] = (uint16_t)i;
+    auto add = [&](const NavVertex& v) {
+        const uint64_t k = v.x | (uint64_t)v.y << 16 | (uint64_t)v.z << 32;
+        auto [it, fresh] = at.try_emplace(k, (uint16_t)nv.size());
+        if (fresh) {
+            if (nv.size() >= 0xFFFF) throw Error("ynv: more than 65535 vertices");
+            nv.push_back(v);
+        }
+        ni.push_back(it->second);
+    };
+    const Vec3 lo = box_min(), hi = box_max();
+    uint32_t links_so_far = 0;
+    std::vector<std::vector<uint32_t>> leaf_polys(leaves.size());
+    for (size_t k = 0; k < in.size(); k++) {
+        const PolyShape& s = in[k];
+        NavPoly p = s.poly;
+        const bool kept = s.source >= 0 && (size_t)s.source < old_polys.size();
+        const size_t n = kept ? old_polys[s.source].vertex_count() : s.corners.size();
+        if (n == 0 || n > 0x7FF) throw Error("ynv: polygon " + std::to_string(k) + " has " + std::to_string(n) + " corners");
+        if (s.edges.size() != n) throw Error("ynv: polygon " + std::to_string(k) + " has " + std::to_string(s.edges.size()) + " edges for " + std::to_string(n) + " corners");
+        if (ni.size() + n > 0xFFFF) throw Error("ynv: more than 65535 polygon corners");
+        p.first_index = (uint16_t)ni.size();
+        p.set_vertex_count((uint32_t)n);
+        if (kept) {
+            const NavPoly& o = old_polys[s.source];
+            for (size_t i = 0; i < n; i++) ni.push_back(old_indices[o.first_index + i]);
+            for (uint32_t l : was_in[s.source]) leaf_polys[l].push_back((uint32_t)k);
+        } else {
+            Vec3 mn = s.corners[0], mx = s.corners[0], sum{};
+            for (const Vec3& c : s.corners) {
+                if (c.x < lo.x - 0.01f || c.y < lo.y - 0.01f || c.z < lo.z - 0.01f || c.x > hi.x + 0.01f || c.y > hi.y + 0.01f || c.z > hi.z + 0.01f)
+                    throw Error("ynv: polygon " + std::to_string(k) + " reaches outside the cell's box");
+                add(quantize(c));
+                mn = vmin(mn, c); mx = vmax(mx, c); sum = sum + c;
+            }
+            p.box = {quarter(mn.x), quarter(mx.x), quarter(mn.y), quarter(mx.y), quarter(mn.z), quarter(mx.z)};
+            const Vec3 mean = sum * (1.0f / (float)n);
+            auto frac = [](float v, float a, float b) { return (uint32_t)std::clamp((int)std::lround((v - a) / std::max(b - a, 1e-3f) * 255.0f), 0, 255); };
+            p.flags2 = (p.flags2 & 0xFFFF0000u) | frac(mean.x, mn.x, mx.x) | frac(mean.y, mn.y, mx.y) << 8;
+            if (p.portal_link_count() == 0) p.part_flags = (p.part_flags & 0x7FFF) | links_so_far << 15;
+            for (uint32_t l = 0; l < leaves.size(); l++) {
+                const NavBox& b = leaves[l]->box;
+                if (p.box.min_x <= b.max_x && p.box.max_x >= b.min_x && p.box.min_y <= b.max_y && p.box.max_y >= b.min_y) leaf_polys[l].push_back((uint32_t)k);
+            }
+        }
+        links_so_far += p.portal_link_count();
+        ne.insert(ne.end(), s.edges.begin(), s.edges.end());
+        np.push_back(p);
+    }
+    std::vector<uint8_t> used(nv.size()), was_used(nv.size());
+    for (uint16_t i : ni) used[i] = 1;
+    for (uint16_t i : old_indices) if (i < was_used.size()) was_used[i] = 1;
+    std::vector<uint16_t> remap(nv.size());
+    size_t kept_vertices = 0;
+    for (size_t i = 0; i < nv.size(); i++) {
+        remap[i] = (uint16_t)kept_vertices;
+        if (used[i] || !was_used[i]) nv[kept_vertices++] = nv[i];
+    }
+    if (kept_vertices != nv.size()) {
+        nv.resize(kept_vertices);
+        for (uint16_t& i : ni) i = remap[i];
+    }
+    vertices = std::move(nv);
+    indices = std::move(ni);
+    edges = std::move(ne);
+    polys = std::move(np);
+    for (size_t l = 0; l < leaves.size(); l++) {
+        if (leaf_polys[l].size() > 0xFFFF) throw Error("ynv: a sector holds at most 65535 polygons");
+        leaves[l]->polys.assign(leaf_polys[l].begin(), leaf_polys[l].end());
+    }
+}
+
+void NavMesh::renumber_points() {
+    if (!sectors) return;
+    std::vector<NavSector*> leaves;
+    leaves_of(*sectors, leaves);
+    uint32_t n = 0;
+    for (NavSector* l : leaves) { l->points_start = n; n += (uint32_t)l->points.size(); }
+}
+
+namespace {
+bool close3(const Vec3& a, const Vec3& b) { return std::fabs(a.x - b.x) < 0.05f && std::fabs(a.y - b.y) < 0.05f && std::fabs(a.z - b.z) < 0.1f; }
+// a-b and c-d lie on one line and overlap by more than 5 cm
+bool overlap(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& d) {
+    const float dx = b.x - a.x, dy = b.y - a.y, len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-4f) return false;
+    const float ux = dx / len, uy = dy / len;
+    auto off = [&](const Vec3& p) { return std::fabs((p.x - a.x) * uy - (p.y - a.y) * ux); };
+    if (off(c) > 0.05f || off(d) > 0.05f) return false;
+    const float tc = (c.x - a.x) * ux + (c.y - a.y) * uy, td = (d.x - a.x) * ux + (d.y - a.y) * uy;
+    return std::min(len, std::max(tc, td)) - std::max(0.0f, std::min(tc, td)) > 0.05f;
+}
+}   // namespace
+
+std::vector<std::string> NavMesh::check_links(std::span<const uint32_t> only) const {
+    std::vector<std::string> bad;
+    std::vector<uint8_t> in(polys.size(), only.empty() ? 1 : 0);
+    for (uint32_t p : only) if (p < in.size()) in[p] = 1;
+    auto area_of = [&](const NavEdgePart& e) { return e.area_index() < adjacent_areas.size() ? adjacent_areas[e.area_index()] : 0xFFFFFFFFu; };
+    std::vector<std::vector<Vec3>> corners(polys.size());
+    for (size_t i = 0; i < polys.size(); i++) corners[i] = poly_vertices(i);
+    for (size_t p = 0; p < polys.size(); p++) {
+        const auto& vs = corners[p];
+        for (size_t k = 0; k < vs.size(); k++) {
+            const NavEdgePart& e = edges[polys[p].first_index + k].a;
+            if (e.open() || area_of(e) != area_id || e.link_kind() == 2 || (e.space() & 1)) continue;
+            const uint32_t q = e.poly();
+            if (!in[p] && !(q < in.size() && in[q])) continue;
+            const std::string side = "polygon " + std::to_string(p) + " side " + std::to_string(k);
+            if (q >= polys.size()) { bad.push_back(side + " names polygon " + std::to_string(q) + ", past the end"); continue; }
+            const Vec3 a = vs[k], b = vs[(k + 1) % vs.size()];
+            const auto& ws = corners[q];
+            // every side of q along this one (a zero-width stitch polygon has two): one must link back
+            bool shared = false, back = false;
+            std::string other;
+            for (size_t j = 0; j < ws.size() && !back; j++) {
+                const Vec3 c = ws[j], d = ws[(j + 1) % ws.size()];
+                if (!((close3(c, b) && close3(d, a)) || (close3(c, a) && close3(d, b)) || overlap(a, b, c, d))) continue;
+                shared = true;
+                const NavEdgePart& be = edges[polys[q].first_index + j].a;
+                if (!be.open() && area_of(be) == area_id && be.poly() == p) back = true;
+                else if (other.empty()) other = be.open() ? std::string("nothing") : std::to_string(area_of(be)) + "/" + std::to_string(be.poly());
+            }
+            if (!shared) bad.push_back(side + " -> " + std::to_string(q) + ": no shared side");
+            else if (!back) bad.push_back(side + " -> " + std::to_string(q) + ": its side links to " + other);
+        }
+    }
+    return bad;
+}
+
+NavCell NavCell::of(float wx, float wy) { return {(int)std::floor((wx + 6000.0f) / 150.0f), (int)std::floor((wy + 6000.0f) / 150.0f)}; }
+std::string NavCell::file_name() const { return "navmesh[" + std::to_string(x * 3) + "][" + std::to_string(y * 3) + "].ynv"; }
+Vec3 NavCell::min() const { return {-6000.0f + 150.0f * x, -6000.0f + 150.0f * y, 0}; }
+Vec3 NavCell::max() const { return {-6000.0f + 150.0f * (x + 1), -6000.0f + 150.0f * (y + 1), 0}; }
+
+std::vector<std::string> cross_cell_changes(const NavMesh& before, const NavMesh& after, size_t max) {
+    auto links = [](const NavMesh& n) {
+        std::set<std::array<uint32_t, 3>> s;
+        for (size_t p = 0; p < n.polys.size(); p++)
+            for (uint32_t k = 0; k < n.polys[p].vertex_count(); k++) {
+                const NavEdgePart& e = n.edges[n.polys[p].first_index + k].a;
+                if (e.open() || e.area_index() >= n.adjacent_areas.size()) continue;
+                const uint32_t area = n.adjacent_areas[e.area_index()];
+                if (area != n.area_id) s.insert({(uint32_t)p, area, e.poly()});
+            }
+        return s;
+    };
+    const auto a = links(before), b = links(after);
+    std::vector<std::string> out;
+    auto say = [&](const char* what, const std::array<uint32_t, 3>& t) {
+        if (out.size() < max) out.push_back(std::string(what) + ": polygon " + std::to_string(t[0]) + " -> area " + std::to_string(t[1]) + " polygon " + std::to_string(t[2]));
+    };
+    for (auto& t : a) if (!b.count(t)) say("lost", t);
+    for (auto& t : b) if (!a.count(t)) say("new", t);
+    return out;
 }
 
 // ---------------------------------------------------------------- reading

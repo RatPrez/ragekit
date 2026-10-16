@@ -981,6 +981,11 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             const NavMesh a = read_ynv(file);
             Bytes w = write_ynv(a); mix(w); out_size = w.size();
             compare_ynv(c, a, read_ynv(w), file, w);
+            // the editing path: every polygon taken apart and put back, the points renumbered
+            NavMesh e = a;
+            e.set_polys(e.shapes());
+            e.renumber_points();
+            compare_ynv(c, a, e, file, write_ynv(e));
         } else if (ext == ".yld") {
             auto a = read_yld(file); Bytes w = write_yld(a); mix(w); out_size = w.size();
             if (rsc::Resource::load(w).version != rsc::kYld) c.fail("yld: written version");

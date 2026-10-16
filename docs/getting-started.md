@@ -2,8 +2,8 @@
 
 ## Building
 
-Any C++20 compiler and CMake 3.20 or newer. The only dependency, miniz (deflate, public domain), is vendored in
-`third_party/miniz`.
+Any C++20 compiler and CMake 3.20 or newer. The two dependencies are vendored: miniz (deflate, public domain) in
+`third_party/miniz`, Clipper2 (polygon clipping for the navmesh builder, Boost licence) in `third_party/clipper2`.
 
 ```
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release

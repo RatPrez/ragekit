@@ -4,7 +4,8 @@ project(ragekit VERSION 0.2.0 LANGUAGES C CXX)
 # ragekit: a C++20 library for reading and writing RAGE (GTA V) resource files
 # (RSC7 containers: .ydr .ydd .ytd .yft .ybn ...) and converting them to and from
 # plain interchange formats. No dependency on any particular tool, and no external
-# libraries: deflate comes from the vendored miniz (public domain, third_party/miniz).
+# libraries: deflate comes from the vendored miniz (public domain, third_party/miniz), polygon clipping and
+# offsets for the navmesh builder from the vendored Clipper2 (Boost licence, third_party/clipper2).
 
 # The tool, tests and examples build when ragekit is the project itself; inside another project (add_subdirectory,
 # FetchContent) only the library does, unless these are switched on.
@@ -34,6 +35,7 @@ add_library(ragekit STATIC
     src/fragment.cpp
     src/particle.cpp
     src/navmesh.cpp
+    src/navbuild.cpp
     src/meta.cpp
     src/map.cpp
     src/occluder.cpp
@@ -56,6 +58,9 @@ add_library(ragekit STATIC
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c
+    third_party/clipper2/src/clipper.engine.cpp
+    third_party/clipper2/src/clipper.offset.cpp
+    third_party/clipper2/src/clipper.rectclip.cpp
 )
 find_package(Threads REQUIRED)
 target_link_libraries(ragekit PUBLIC Threads::Threads)
@@ -72,7 +77,8 @@ target_include_directories(ragekit
     PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:include>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniz)
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniz
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/clipper2/include)
 target_compile_definitions(ragekit PRIVATE MINIZ_NO_ARCHIVE_APIS MINIZ_NO_STDIO MINIZ_NO_ZLIB_COMPAT_NAMES)
 
 if (MSVC)

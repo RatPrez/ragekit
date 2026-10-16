@@ -990,7 +990,7 @@ int main(int argc, char** argv) {
         if (cmd == "occlusion") { int rc = cmd_occlusion(args); if (rc != 2) return rc; }
         if (cmd == "rel") { int rc = cmd_rel(args); if (rc != 2) return rc; }
         if (cmd == "rpf") { int rc = cmd_rpf(args); if (rc != 2) return rc; }
-        if (cmd == "index" || cmd == "find" || cmd == "pull" || cmd == "shaders" || cmd == "world") {
+        if (cmd == "index" || cmd == "find" || cmd == "pull" || cmd == "shaders" || cmd == "world" || cmd == "navmesh") {
             std::vector<std::string> a = args;
             if (verbose) a.push_back("-v");
             int rc = cmd_gameindex(cmd, a);
@@ -1005,6 +1005,8 @@ int main(int argc, char** argv) {
                     "  rk occlusion <ytyp> <out dir> [--archetype <name>] [--name <name>] [--pos x,y,z | --ymap <file>]\n"
                     "  rk occlusion info <ymt> [--all]\n  rk occlusion roundtrip <in.ymt> <out.ymt>\n  rk occlusion scan <out dir> <rpf>...\n"
                     "  rk rpf rm <rpf> <entry path>\n  rk rpf rewrite <in.rpf> <out.rpf> [--aes | --ng] [--nested]\n"
+                    "  rk navmesh cell <x> <y> | check <ynv|cell> | patch <x0,y0,x1,y1> -o <out.ynv> [--z lo,hi] [--seed x,y,z] [--in <cell.ynv>] [--ybn <file>]...\n"
+                    "             [--ymap <file>]... [--props name,...] [--prop-radius r] [--game-props] [--exclude ybn,...] [--sp]\n"
                     "  rk world info | at <x> <y> <z> | near <x> <y> <z> <radius> | occluders <x> <y> <z> <radius> | mlos [name]   [--all-lods] [--groups] [--sp] [--rebuild]\n");
         return 2;
     } catch (const std::exception& e) {

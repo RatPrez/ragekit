@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -647,7 +648,171 @@ int cmd_world(const std::vector<std::string>& args) {
     return 2;
 }
 
+// rk navmesh cell <x> <y> | check <ynv|cell> | patch <x0,y0,x1,y1> -o <out.ynv> [...]: navmeshes (navmesh.h, navbuild.h)
+std::vector<float> floats(const std::string& s) {
+    std::vector<float> v;
+    size_t i = 0;
+    while (i <= s.size()) {
+        const size_t j = std::min(s.find(',', i), s.size());
+        v.push_back((float)std::atof(s.substr(i, j - i).c_str()));
+        i = j + 1;
+    }
+    return v;
+}
+std::vector<std::string> words(const std::string& s) {
+    std::vector<std::string> v;
+    size_t i = 0;
+    while (i < s.size()) {
+        const size_t j = std::min(s.find(',', i), s.size());
+        if (j > i) v.push_back(s.substr(i, j - i));
+        i = j + 1;
+    }
+    return v;
+}
+
+int cmd_navmesh(const std::vector<std::string>& args) {
+    Common c = parse(args);
+    std::vector<std::string> rest, ybns, ymaps, props, exclude;
+    std::string out, in;
+    std::optional<std::vector<float>> zr, seed;
+    bool game_props = false, sp = false;
+    float prop_radius = 0.12f;
+    for (size_t i = 0; i < c.rest.size(); i++) {
+        const std::string& a = c.rest[i];
+        auto next = [&]() -> const std::string& { if (i + 1 >= c.rest.size()) throw Error(a + " takes a value"); return c.rest[++i]; };
+        if (a == "-o") out = next();
+        else if (a == "--in") in = next();
+        else if (a == "--z") zr = floats(next());
+        else if (a == "--seed") seed = floats(next());
+        else if (a == "--ybn") ybns.push_back(next());
+        else if (a == "--ymap") ymaps.push_back(next());
+        else if (a == "--props") for (auto& w : words(next())) props.push_back(w);
+        else if (a == "--prop-radius") prop_radius = (float)std::atof(next().c_str());
+        else if (a == "--exclude") for (auto& w : words(next())) exclude.push_back(lower(w));
+        else if (a == "--game-props") game_props = true;
+        else if (a == "--sp") sp = true;
+        else rest.push_back(a);
+    }
+    if (rest.empty()) return 2;
+    const std::string sub = rest[0];
+    if (sub == "cell" && rest.size() == 3) {
+        const NavCell cell = NavCell::of((float)std::atof(rest[1].c_str()), (float)std::atof(rest[2].c_str()));
+        GameIndex gi = open_index(c, "", false);
+        const std::string stem = cell.file_name().substr(0, cell.file_name().size() - 4);
+        const auto f = gi.resolve_file(stem, ".ynv");
+        std::printf("%s  area %u  x %.0f..%.0f y %.0f..%.0f  %s\n", cell.file_name().c_str(), cell.area_id(), cell.min().x, cell.max().x, cell.min().y, cell.max().y,
+                    f ? gi.path(*f).c_str() : "(not in the game)");
+        return 0;
+    }
+    auto load = [&](const std::string& name, std::string* where) {
+        if (fs::exists(name)) { if (where) *where = name; return read_ynv(rsc::read_file(name)); }
+        GameIndex gi = open_index(c, "", false);
+        std::string stem = name;
+        if (stem.size() > 4 && lower(stem.substr(stem.size() - 4)) == ".ynv") stem.resize(stem.size() - 4);
+        const auto f = gi.resolve_file(stem, ".ynv");
+        if (!f) throw Error("no " + name + " (a file, or a navmesh of the game)");
+        if (where) *where = gi.path(*f);
+        return read_ynv(gi.extract(*f));
+    };
+    if (sub == "check" && rest.size() == 2) {
+        std::string where;
+        const NavMesh n = load(rest[1], &where);
+        const auto bad = n.check_links();
+        std::printf("%s: area %u, %zu polygons, %zu cover points; %zu links that do not hold\n", where.c_str(), n.area_id, n.polys.size(), n.points().size(), bad.size());
+        for (size_t i = 0; i < bad.size() && i < 20; i++) std::printf("  %s\n", bad[i].c_str());
+        return bad.empty() ? 0 : 1;
+    }
+    if (sub != "patch" || rest.size() != 2) return 2;
+    if (out.empty()) throw Error("rk navmesh patch: give the output file with -o");
+    const auto rect = floats(rest[1]);
+    if (rect.size() != 4) throw Error("rk navmesh patch: the area is x0,y0,x1,y1");
+    NavPatchOptions o;
+    o.x0 = std::min(rect[0], rect[2]); o.x1 = std::max(rect[0], rect[2]);
+    o.y0 = std::min(rect[1], rect[3]); o.y1 = std::max(rect[1], rect[3]);
+    if (zr) { if (zr->size() != 2) throw Error("--z takes lo,hi"); o.z_lo = (*zr)[0]; o.z_hi = (*zr)[1]; }
+    if (seed) { if (seed->size() != 3) throw Error("--seed takes x,y,z"); o.seed = Vec3{(*seed)[0], (*seed)[1], (*seed)[2]}; }
+    const NavCell cell = NavCell::of(o.x0, o.y0), cell1 = NavCell::of(o.x1 - 1e-3f, o.y1 - 1e-3f);
+    if (cell.x != cell1.x || cell.y != cell1.y)
+        throw Error("the area spans two navmesh cells (" + cell.file_name() + ", " + cell1.file_name() + "): split it at the 150 m border");
+
+    GameIndex gi = open_index(c, "", false);
+    std::string where;
+    NavMesh nav;
+    if (!in.empty()) { nav = read_ynv(rsc::read_file(in)); where = in; }
+    else {
+        const auto f = gi.resolve_file(cell.file_name().substr(0, cell.file_name().size() - 4), ".ynv");
+        if (!f) throw Error("the game has no " + cell.file_name());
+        nav = read_ynv(gi.extract(*f));
+        where = gi.path(*f);
+    }
+    if (nav.area_id != cell.area_id()) throw Error(where + " is area " + std::to_string(nav.area_id) + ", the area given lies in " + std::to_string(cell.area_id()));
+    const NavMesh before = nav;
+
+    // collision: the given files, and the game's static collision reaching the area where no given file replaces it
+    const AABB ext = nav_patch_extent(nav, o);
+    NavCollision col;
+    std::set<std::string> given;
+    auto skip = [&](const std::string& name) {
+        const std::string n = lower(name), stem = n.size() > 4 && n.substr(n.size() - 4) == ".ybn" ? n.substr(0, n.size() - 4) : n;
+        return std::find(exclude.begin(), exclude.end(), n) != exclude.end() || std::find(exclude.begin(), exclude.end(), stem) != exclude.end();
+    };
+    for (const std::string& p : ybns) {
+        const std::string name = lower(fs::path(p).filename().string());
+        if (skip(name)) continue;
+        given.insert(name);
+        const BoundPtr b = read_ybn(rsc::read_file(p));
+        const size_t was = col.triangles.size();
+        col.add_bound(*b, &ext);
+        if (col.triangles.size() > was) std::printf("collision %s (given): %zu triangles\n", name.c_str(), col.triangles.size() - was);
+    }
+    WorldIndexOptions wo;
+    wo.sp_map = sp;
+    wo.progress = [](const std::string& s) { std::fprintf(stderr, "%s\n", s.c_str()); };
+    WorldIndex w = WorldIndex::open(gi, wo);
+    const Vec3 emn = ext.min.xyz(), emx = ext.max.xyz();
+    for (uint32_t bi : w.bounds_in(emn, emx)) {
+        const WorldBounds& wb = w.bounds()[bi];
+        const std::string name = gi.file_name(wb.file);
+        if ((wb.layer & 0xFF) == 1 || (wb.layer & 0xFF) == 2 || given.count(name) || skip(name)) continue;   // hi@ (vehicles only), ma@
+        const BoundPtr b = read_ybn(gi.extract(wb.file));
+        const size_t was = col.triangles.size();
+        col.add_bound(*b, &ext);
+        if (col.triangles.size() > was) std::printf("collision %s (%s): %zu triangles\n", name.c_str(), gi.archive_path(wb.file).c_str(), col.triangles.size() - was);
+    }
+    // posts: the named props placed by the given ymaps (and the game's, with --game-props)
+    if (!props.empty()) {
+        std::set<uint32_t> want;
+        for (auto& p : props) want.insert(joaat_lower(p));
+        auto add = [&](const Entity& e) {
+            const Vec3 q = e.position;
+            if (!want.count(e.archetype_name) || q.x < emn.x || q.x > emx.x || q.y < emn.y || q.y > emx.y || q.z < emn.z || q.z > emx.z) return;
+            col.posts.push_back({q.x, q.y, q.z, prop_radius, 1.0f});
+        };
+        for (const std::string& p : ymaps) for (const Entity& e : read_ymap(rsc::read_file(p)).entities) add(e);
+        if (game_props) for (const WorldEntity& e : w.entities_in(emn, emx)) add(e.def);
+        std::printf("posts: %zu props cut in\n", col.posts.size());
+    }
+
+    const NavPatchResult r = patch_navmesh(nav, o, col);
+    const Bytes written = write_ynv(nav);
+    rsc::write_file(out, written);
+    const NavMesh back = read_ynv(written);
+    const auto bad = back.check_links(r.written);
+    const auto cross = cross_cell_changes(before, back);
+    std::printf("%s (from %s): %u polygons replaced by %u (%u height regions), %u kept polygons stitched, %u links, %u open sides, %u samples blocked by "
+                "rails, posts and props, %u cover points dropped, worst polygon %.2f m off the ground\n",
+                cell.file_name().c_str(), where.c_str(), r.removed, r.created, r.regions, r.kept_changed, r.links, r.open_sides, r.blocked_samples, r.points_dropped,
+                r.worst_height);
+    for (auto& n : r.notes) std::printf("  note: %s\n", n.c_str());
+    for (size_t i = 0; i < bad.size() && i < 20; i++) std::printf("  link: %s\n", bad[i].c_str());
+    for (auto& x : cross) std::printf("  link into the next cell changed: %s\n", x.c_str());
+    std::printf("%s: %zu polygons, %zu bytes; %s\n", out.c_str(), back.polys.size(), written.size(),
+                bad.empty() && cross.empty() ? "every link checked" : "LINKS DO NOT HOLD");
+    return bad.empty() && cross.empty() ? 0 : 1;
+}
+
 int cmd_gameindex(const std::string& cmd, const std::vector<std::string>& args) {
+    if (cmd == "navmesh") return cmd_navmesh(args);
     if (cmd == "world") return cmd_world(args);
     if (cmd == "shaders") return cmd_shaders(args);
     if (cmd == "index") return cmd_index(args);
