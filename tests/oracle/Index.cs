@@ -53,7 +53,7 @@ static class IndexOracle
 
         // ---- CodeWalker's side
         var sw = Stopwatch.StartNew();
-        GTA5Keys.LoadFromPath(game, false, null);
+        GTA5Keys.LoadFromPath(game, RpfDump.IsEnhanced(game), null);
         var gfc = new GameFileCache(2L << 30, 10, game, false, "patchday28ng", false, "");
         gfc.BuildExtendedJenkIndex = false;
         int errs = 0;

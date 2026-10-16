@@ -36,7 +36,7 @@ third_party/miniz  deflate (public domain)
 | RBF (creature metadata .ymt ...) | yes | yes | byte for byte: the expressions of clothing components and props, cutscene and Bink metadata |
 | XML data files (.meta) | yes | yes | vehicles, carcols, carvariations, handling, vehiclelayouts, peds, pedalternatevariations, content.xml ... |
 | .rel audio data | yes | yes | byte for byte; the dat151 items an interior needs; interior audio occlusion files |
-| RPF7 archives | yes | yes | AES, NG, OPEN and plain; nested archives; writes plain, OPEN and AES |
+| RPF7 archives | yes | yes | AES, NG, OPEN and plain; nested archives; writes all four, NG as the game encrypts it; Legacy and Enhanced alike |
 | CodeWalker XML | no | yes | what CodeWalker's "Export XML" writes for .ydr/.ydd/.ybn/.ytd, which CodeWalker and Sollumz import |
 | glTF 2.0 | no | yes | .glb with textures |
 | .fxc / .sps shaders | yes | no | constant buffers, parameters, techniques; a database of an install's shaders |
@@ -126,7 +126,6 @@ same CodeWalker XML. These tests do not run the game itself. See [docs/testing.m
 
 ## Not done yet
 
-- Writing NG-encrypted archives.
 - Typed models for the common PSO files (carcols, carvariations, peds ...).
 - Animations (.ycd), navmeshes, path nodes and the other formats [docs/codewalker-comparison.md](docs/codewalker-comparison.md)
   lists as gaps.

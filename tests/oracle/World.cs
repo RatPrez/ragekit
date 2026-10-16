@@ -14,7 +14,7 @@ static class WorldOracle
     {
         string game = args[1], outPath = args[2];
         var sw = Stopwatch.StartNew();
-        GTA5Keys.LoadFromPath(game, false, null);
+        GTA5Keys.LoadFromPath(game, RpfDump.IsEnhanced(game), null);
         var gfc = new GameFileCache(2L << 30, 10, game, false, "__every_pack__", false, "");
         gfc.LoadArchetypes = false;
         gfc.BuildExtendedJenkIndex = false;

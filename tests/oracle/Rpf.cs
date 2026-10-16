@@ -6,11 +6,14 @@ using CodeWalker.GameFiles;
 
 static class RpfDump
 {
+    // a GTA V Enhanced folder: its keys come from GTA5_Enhanced.exe
+    public static bool IsEnhanced(string game) => !File.Exists(Path.Combine(game, "GTA5.exe")) && File.Exists(Path.Combine(game, "GTA5_Enhanced.exe"));
+
     public static int Run(string[] args)
     {
         string game = args[1], file = args[2];
         bool hash = args.Contains("--hash"), nested = args.Contains("--nested");
-        GTA5Keys.LoadFromPath(game, false, null);
+        GTA5Keys.LoadFromPath(game, IsEnhanced(game), null);
         var rpf = new RpfFile(file, "");
         int errors = 0;
         rpf.ScanStructure(s => { }, e => { Console.Error.WriteLine("scan: " + e); errors++; });
@@ -24,7 +27,7 @@ static class RpfDump
     /// oracle rpfkeys <gameFolder> <outFolder>: CodeWalker's own key material, written in the cache file layout.
     public static int Keys(string[] args)
     {
-        GTA5Keys.LoadFromPath(args[1], false, null);
+        GTA5Keys.LoadFromPath(args[1], IsEnhanced(args[1]), null);
         Directory.CreateDirectory(args[2]);
         File.WriteAllBytes(Path.Combine(args[2], "gtav_aes_key.dat"), GTA5Keys.PC_AES_KEY);
         CryptoIO.WriteNgKeys(Path.Combine(args[2], "gtav_ng_key.dat"), GTA5Keys.PC_NG_KEYS);

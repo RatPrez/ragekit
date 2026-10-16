@@ -70,15 +70,19 @@ static void writer_tests() {
     Bytes big = fake_rsc7(0x1100000, 0x00123456u, 0x00654321u);
     b.add_file("stream/big.ytd", big);
     b.add_archive("dlc/child.rpf", std::move(child));
-    for (int enc = 0; enc < 2; enc++) {
+    for (int enc = 0; enc < 3; enc++) {
         RpfWriteOptions opt;
+        opt.name = "t.rpf";
+        const RpfEncryption want = enc == 0 ? RpfEncryption::Open : enc == 1 ? RpfEncryption::Aes : RpfEncryption::Ng;
         if (enc) {
-            opt.encryption = RpfEncryption::Aes;
-            if (!RpfKeys::default_keys()->has_aes()) { std::printf("skip AES writer case (no key)\n"); continue; }
+            opt.encryption = want;
+            const auto k = RpfKeys::default_keys();
+            if (enc == 1 && !k->has_aes()) { std::printf("skip AES writer case (no key)\n"); continue; }
+            if (enc == 2 && !k->has_ng()) { std::printf("skip NG writer case (no keys)\n"); continue; }
         }
         Rpf r = Rpf::open_memory(b.build(opt), "t.rpf");
-        const char* tag = enc ? "AES" : "OPEN";
-        check(r.encryption() == (enc ? RpfEncryption::Aes : RpfEncryption::Open), tag);
+        const char* tag = enc == 0 ? "OPEN" : enc == 1 ? "AES" : "NG";
+        check(r.encryption() == want, tag);
         int i = r.find("common/data/a.meta");
         check(i >= 0 && r.extract(i) == text && r.entries()[(size_t)i].compressed() && r.entries()[(size_t)i].stored_size < 5000, "compressed binary round trip");
         i = r.find("COMMON/data/b.bin");

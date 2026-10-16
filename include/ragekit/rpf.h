@@ -6,7 +6,7 @@
 // from the game executable (see RpfKeys). Unencrypted archives (FiveM resource.rpf, OpenIV
 // style) need no keys.
 //
-// Read only for now. RpfEntry keeps every raw field the table holds so a writer can be added.
+// RpfBuilder writes them: plain, OPEN, AES or NG, for GTA V Legacy and Enhanced alike (they share the format and keys).
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -33,7 +33,7 @@ struct RpfKeys {
     /// Reads the CodeWalker cache files that exist in `folder`; missing files stay empty.
     static RpfKeys load(const std::string& folder);
     /// Writes the files CodeWalker's GTA5Keys.SaveToPath writes (same names and layout), minus
-    /// the NG encryption tables/LUTs, which are only needed to write archives.
+    /// CodeWalker's NG encryption tables/LUTs (ragekit derives its NG encryption from the decrypt tables).
     void save(const std::string& folder) const;
     /// Searches the executable for the keys by SHA1 hash, as CodeWalker does (every 8-byte
     /// aligned offset is hashed; a few seconds). Current executables hold only the AES key and the
@@ -125,10 +125,13 @@ private:
 // Writing
 
 struct RpfWriteOptions {
-    /// None and Open write plain tables (Open is what OpenIV/FiveM packs use); Aes encrypts the entry
-    /// and name tables with the AES key (files stay plain). NG is not supported.
+    /// None and Open write plain tables (Open is what OpenIV/FiveM packs use); Aes and Ng encrypt the entry
+    /// and name tables (files stay plain), Ng as the game's own archives are. Nested archives get the same.
     RpfEncryption encryption = RpfEncryption::Open;
-    std::shared_ptr<const RpfKeys> keys; // for Aes; default RpfKeys::default_keys()
+    std::shared_ptr<const RpfKeys> keys; // for Aes and Ng; default RpfKeys::default_keys()
+    /// The archive's file name ("dlc.rpf"): NG picks its key by the name (and the archive's size), so an NG archive
+    /// must keep the name it was written for. save() takes it from the path when empty; build() needs it for NG.
+    std::string name;
     bool compress = true;                // deflate binary files added from memory (not .rpf/.awc)
 };
 
@@ -171,7 +174,6 @@ public:
     /// Paths of every entry, '/' separated, directories first within a folder as the table sorts them.
     std::vector<std::string> list() const;
 
-    /// Archive name matters for nothing but NG; kept for the day it does.
     Bytes build(const RpfWriteOptions& opt = {}) const;
     void save(const std::string& path, const RpfWriteOptions& opt = {}) const;
 

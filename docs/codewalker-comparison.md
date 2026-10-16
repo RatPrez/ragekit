@@ -10,9 +10,9 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | Format | CodeWalker | ragekit | Gap |
 |---|---|---|---|
 | RSC7 resource container | read, write (ResourceBuilder, page layout) | **yes** (own page layout, following the game's own files; deflate via miniz) | none |
-| RPF7 archive | read, write (create, add/replace/delete/rename entries, defragment, encrypt AES/NG) | **yes** (read AES/NG/OPEN/none, nested archives, resources as RSC7 files; write none/OPEN/AES, nested archives, lazy copies out of any archive) | writing NG encryption |
+| RPF7 archive | read, write (create, add/replace/delete/rename entries, defragment, encrypt AES/NG) | **yes** (read AES/NG/OPEN/none, nested archives, resources as RSC7 files; write none/OPEN/AES/NG, nested archives, lazy copies out of any archive; Legacy and Enhanced) | none |
 | RPF2 (FiveM cache `resource.rpf`) | - | - | neither reads these |
-| Encryption keys | from the exe and the embedded `magic.dat` | from the exe and `magic.dat` (`rk rpf keys`), kept in `~/.ragekit/keys` | the NG *encryption* tables are not regenerated |
+| Encryption keys | from the exe and the embedded `magic.dat` | from the exe (GTA5.exe or GTA5_Enhanced.exe: the same keys) and `magic.dat` (`rk rpf keys`), kept in `~/.ragekit/keys`; NG encryption derived from the decrypt tables | none |
 | GTA V Enhanced (gen9) .ytd .ydr .ydd .yft .ypt | read; write by converting Legacy files (`Gen9Converter`, a shader table from one sample per shader) | **yes**: read, write, Enhanced files written back keep every non-pointer byte; conversion both ways, from a table of every shader of the game's drawables (Legacy parameter lists, Enhanced layouts and values, presets, cloth layouts) | none |
 
 ## Resources (RSC7)
@@ -70,7 +70,5 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 
 ## Next for ragekit
 
-1. Writing NG-encrypted archives.
-2. Typed models for the common PSO files (carcols, carvariations, peds ...).
-3. GTA V Enhanced (the gen9 formats).
-4. Animations (`.ycd`), and the smaller formats people ask for (`.gxt2`, `.awc`).
+1. Typed models for the common PSO files (carcols, carvariations, peds ...).
+2. Animations (`.ycd`), and the smaller formats people ask for (`.gxt2`, `.awc`).

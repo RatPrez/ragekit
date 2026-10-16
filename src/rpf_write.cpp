@@ -2,6 +2,7 @@
 // WriteHeader, CreateFile): see rpf.h.
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <fstream>
 #include <sstream>
@@ -263,7 +264,9 @@ Bytes build_archive(const Node& root, const RpfWriteOptions& opt);
 Prepared prepare(const Node& n, const RpfWriteOptions& opt) {
     Prepared p;
     if (n.kind == Node::Kind::Archive) {
-        p.data = build_archive(*n.child->root_node(), opt);
+        RpfWriteOptions child = opt;
+        child.name = n.name;   // a nested archive's NG key comes from its own name
+        p.data = build_archive(*n.child->root_node(), child);
         p.uncompressed = (uint32_t)p.data.size();
         return p;
     }
@@ -313,11 +316,16 @@ void write_zeros(std::ostream& os, uint64_t n) {
 }
 
 void write_archive(const Node& root, const RpfWriteOptions& opt, std::ostream& os) {
-    if (opt.encryption == RpfEncryption::Ng) throw Error("writing NG encrypted archives is not supported");
     std::shared_ptr<const RpfKeys> keys = opt.keys;
     if (opt.encryption == RpfEncryption::Aes) {
         if (!keys) keys = RpfKeys::default_keys();
         if (!keys->has_aes()) throw Error("no AES key available for an AES archive (see RpfKeys)");
+    }
+    if (opt.encryption == RpfEncryption::Ng) {
+        if (!keys) keys = RpfKeys::default_keys();
+        if (!keys->has_ng()) throw Error("no NG keys available for an NG archive (see RpfKeys)");
+        if (opt.name.empty()) throw Error("an NG archive needs its file name (RpfWriteOptions::name): its key depends on it");
+        if (!rpfcrypto::ng_can_encrypt(keys->ng_tables.data())) throw Error("the NG tables do not invert");
     }
 
     // table order: a directory's children are contiguous and sorted by name; directories get their
@@ -411,6 +419,11 @@ void write_archive(const Node& root, const RpfWriteOptions& opt, std::ostream& o
     if (opt.encryption == RpfEncryption::Aes) {
         rpfcrypto::aes_encrypt(table.data(), table.size(), keys->aes.data());
         rpfcrypto::aes_encrypt(hdr_names.data(), hdr_names.size(), keys->aes.data());
+    } else if (opt.encryption == RpfEncryption::Ng) {
+        // the key: the archive's name and its whole size, as the reader takes them
+        const uint32_t length = (uint32_t)(block * 512);
+        for (Bytes* b : {&table, &hdr_names})
+            rpfcrypto::ng_encrypt(b->data(), b->size(), opt.name, length, keys->ng_keys.data(), keys->ng_tables.data(), keys->hash_lut.data());
     }
     uint8_t head[16];
     uint32_t enc = opt.encryption == RpfEncryption::None ? 0u : (uint32_t)opt.encryption;
@@ -435,7 +448,9 @@ Bytes build_archive(const Node& root, const RpfWriteOptions& opt) {
 
 Bytes RpfBuilder::build(const RpfWriteOptions& opt) const { return build_archive(*root_, opt); }
 
-void RpfBuilder::save(const std::string& path, const RpfWriteOptions& opt) const {
+void RpfBuilder::save(const std::string& path, const RpfWriteOptions& opt_in) const {
+    RpfWriteOptions opt = opt_in;
+    if (opt.name.empty()) opt.name = std::filesystem::path(path).filename().string();
     std::ofstream os(path, std::ios::binary | std::ios::trunc);
     if (!os) throw Error("cannot write " + path);
     write_archive(*root_, opt, os);

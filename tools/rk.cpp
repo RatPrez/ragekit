@@ -579,9 +579,10 @@ static void rpf_pack_into(RpfBuilder& b, const fs::path& dir, const std::string&
     }
 }
 
-static int cmd_rpf_write(const std::string& sub, std::vector<std::string> args, bool aes, bool rewrite_nested) {
+static int cmd_rpf_write(const std::string& sub, std::vector<std::string> args, bool aes, bool ng, bool rewrite_nested) {
     RpfWriteOptions opt;
     if (aes) opt.encryption = RpfEncryption::Aes;
+    if (ng) opt.encryption = RpfEncryption::Ng;
     if (sub == "pack" && args.size() == 2) {
         RpfBuilder b;
         rpf_pack_into(b, args[0], "");
@@ -617,8 +618,8 @@ static int cmd_rpf_write(const std::string& sub, std::vector<std::string> args, 
             }
             if (sub == "add") target->add_file(rest, rsc::read_file(args[2]));
             else if (!target->remove(rest)) { std::fprintf(stderr, "error: no such entry: %s\n", args[1].c_str()); return 1; }
-            if (rpf.encryption() == RpfEncryption::Aes) opt.encryption = RpfEncryption::Aes; // keep AES
-            if (rpf.encryption() == RpfEncryption::Ng) { std::fprintf(stderr, "error: NG archives cannot be written; use `rk rpf rewrite` to make an OPEN copy\n"); return 1; }
+            if (rpf.encryption() == RpfEncryption::Aes || rpf.encryption() == RpfEncryption::Ng) opt.encryption = rpf.encryption(); // keep it
+            opt.name = fs::path(args[0]).filename().string();   // NG: the key follows the final name, not the .tmp
             b.save(tmp, opt);
         }
         std::error_code ec;
@@ -632,7 +633,7 @@ static int cmd_rpf_write(const std::string& sub, std::vector<std::string> args, 
 
 static int cmd_rpf(const std::vector<std::string>& args_in) {
     std::vector<std::string> args;
-    bool recursive = false, nested = false, tsv = false, aes = false;
+    bool recursive = false, nested = false, tsv = false, aes = false, ng = false;
     std::string magic;
     for (size_t i = 0; i < args_in.size(); i++) {
         const std::string& a = args_in[i];
@@ -640,6 +641,7 @@ static int cmd_rpf(const std::vector<std::string>& args_in) {
         if (a == "-r") recursive = true;
         else if (a == "--nested") nested = true;
         else if (a == "--aes") aes = true;
+        else if (a == "--ng") ng = true;
         else if (a == "--tsv") tsv = true;
         else if (a == "--hash") g_rpf_hash = true;
         else args.push_back(a);
@@ -655,7 +657,7 @@ static int cmd_rpf(const std::vector<std::string>& args_in) {
         return 0;
     }
     if (sub == "pack" || sub == "add" || sub == "rm" || sub == "rewrite")
-        return cmd_rpf_write(sub, std::vector<std::string>(args.begin() + 1, args.end()), aes, nested);
+        return cmd_rpf_write(sub, std::vector<std::string>(args.begin() + 1, args.end()), aes, ng, nested);
     if (args.size() < 2) return 2;
     Rpf rpf = Rpf::open(args[1]);
     if (sub == "ls" && args.size() <= 3) {
@@ -989,11 +991,11 @@ int main(int argc, char** argv) {
                     "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
                     "  rk gltf <ydr|ydd|yft> <out.glb> [textures.ytd ...] [--all-lods] [--no-textures]\n"
                     "  rk rpf ls <file.rpf> [path] [-r] [--nested] [--tsv [--hash]]\n  rk rpf cat <file.rpf> <entry path> <out>\n  rk rpf extract <file.rpf> <out dir> [path] [--nested]\n"
-                    "  rk rpf keys <GTA5.exe> [key folder] [--magic <magic.dat>]\n  rk rpf pack <dir> <out.rpf> [--aes]\n  rk rpf add <rpf> <entry path> <file>\n"
+                    "  rk rpf keys <GTA5.exe> [key folder] [--magic <magic.dat>]\n  rk rpf pack <dir> <out.rpf> [--aes | --ng]\n  rk rpf add <rpf> <entry path> <file>\n"
                     "  rk rel info <file.rel> [--max N]\n  rk rel roundtrip <in.rel> <out.rel>\n  rk rel scan <out dir|-> <rpf|folder|file.rel>...\n"
                     "  rk occlusion <ytyp> <out dir> [--archetype <name>] [--name <name>] [--pos x,y,z | --ymap <file>]\n"
                     "  rk occlusion info <ymt> [--all]\n  rk occlusion roundtrip <in.ymt> <out.ymt>\n  rk occlusion scan <out dir> <rpf>...\n"
-                    "  rk rpf rm <rpf> <entry path>\n  rk rpf rewrite <in.rpf> <out.rpf> [--aes] [--nested]\n"
+                    "  rk rpf rm <rpf> <entry path>\n  rk rpf rewrite <in.rpf> <out.rpf> [--aes | --ng] [--nested]\n"
                     "  rk world info | at <x> <y> <z> | near <x> <y> <z> <radius> | occluders <x> <y> <z> <radius> | mlos [name]   [--all-lods] [--groups] [--sp] [--rebuild]\n");
         return 2;
     } catch (const std::exception& e) {

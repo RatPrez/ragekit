@@ -22,4 +22,10 @@ uint32_t name_hash(std::string_view name, const uint8_t* lut);
 void ng_decrypt(uint8_t* data, size_t len, std::string_view name, uint32_t length, const uint8_t* keys,
                 const uint32_t* tables, const uint8_t* lut);
 
+/// NG encrypt in place: the inverse of ng_decrypt with the same arguments, derived from the decrypt tables.
+void ng_encrypt(uint8_t* data, size_t len, std::string_view name, uint32_t length, const uint8_t* keys,
+                const uint32_t* tables, const uint8_t* lut);
+/// Whether the decrypt tables invert (true for the game's).
+bool ng_can_encrypt(const uint32_t* tables);
+
 } // namespace rk::rpfcrypto

@@ -1,6 +1,10 @@
 #include "rpf_crypto.h"
 #include <array>
 #include <cstring>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
 
 namespace rk::rpfcrypto {
 
@@ -212,3 +216,127 @@ void ng_decrypt(uint8_t* data, size_t len, std::string_view name, uint32_t lengt
 }
 
 } // namespace rk::rpfcrypto
+
+// ---- NG encryption -----------------------------------------------------------------------
+//
+// Each round maps four bytes to a word: x = T0[b0] ^ T1[b1] ^ T2[b2] ^ T3[b3] ^ key. The values of each table, less its
+// value at 0, span an 8-dimensional subspace of GF(2)^32 and the four subspaces together the whole space; so x ^ key ^
+// T0[0] ^ T1[0] ^ T2[0] ^ T3[0] splits uniquely into one table's share per byte (a 32x32 bit system, solved once per
+// round and word), and each share names its byte. The decrypt tables alone give the encryption, no other key material.
+
+namespace rk::rpfcrypto {
+
+namespace {
+
+constexpr int kRoundB[4][4] = {{0, 7, 10, 13}, {1, 4, 11, 14}, {2, 5, 8, 15}, {3, 6, 9, 12}};
+int input_byte(int round, int w, int i) { return (round <= 1 || round == 16) ? 4 * w + i : kRoundB[w][i]; }
+
+struct WordInverse {
+    uint32_t inv[32];           // rows of the inverse of the basis matrix: coordinate bit j = parity(inv[j] & z)
+    uint32_t basis[4][8];       // per byte lane, its 8 basis vectors
+    uint32_t zero = 0;          // T0[0] ^ T1[0] ^ T2[0] ^ T3[0]
+    std::array<std::array<int16_t, 256>, 4> by_coords;   // lane, its 8 coordinates -> the byte
+};
+
+struct NgInverse { WordInverse w[17][4]; bool ok = true; };
+
+int parity(uint32_t v) { return __builtin_parity(v); }
+
+NgInverse build(const uint32_t* tables) {
+    NgInverse ni;
+    auto tab = [&](int round, int i) { return tables + ((size_t)round * 16 + i) * 256; };
+    for (int r = 0; r < 17; r++) {
+        for (int w = 0; w < 4; w++) {
+            WordInverse& wi = ni.w[r][w];
+            uint32_t m[32];   // columns: lane-major basis vectors
+            for (int i = 0; i < 4; i++) {
+                const uint32_t* t = tab(r, input_byte(r, w, i));
+                wi.zero ^= t[0];
+                // 8 independent vectors of the lane by elimination over its values
+                uint32_t rows[32] = {};   // rows[bit] = a vector whose highest set bit is `bit`
+                int found = 0;
+                for (int b = 1; b < 256 && found < 8; b++) {
+                    uint32_t v = t[b] ^ t[0], orig = v;
+                    for (int bit = 31; bit >= 0 && v; bit--)
+                        if ((v >> bit) & 1) { if (rows[bit]) v ^= rows[bit]; else { rows[bit] = v; wi.basis[i][found++] = orig; v = 0; } }
+                }
+                if (found < 8) ni.ok = false;
+                for (int k = 0; k < 8; k++) m[i * 8 + k] = wi.basis[i][k];
+            }
+            // invert the 32x32 matrix M (column c = m[c]): solve with an augmented identity, by rows
+            uint32_t a[32], inv[32];
+            for (int row = 0; row < 32; row++) {
+                a[row] = 0;
+                for (int c = 0; c < 32; c++) a[row] |= ((m[c] >> row) & 1u) << c;
+                inv[row] = 1u << row;
+            }
+            for (int c = 0; c < 32; c++) {
+                int p = -1;
+                for (int row = c; row < 32; row++) if ((a[row] >> c) & 1) { p = row; break; }
+                if (p < 0) { ni.ok = false; break; }
+                std::swap(a[c], a[p]); std::swap(inv[c], inv[p]);
+                for (int row = 0; row < 32; row++)
+                    if (row != c && ((a[row] >> c) & 1)) { a[row] ^= a[c]; inv[row] ^= inv[c]; }
+            }
+            std::memcpy(wi.inv, inv, sizeof inv);
+            // each lane's byte from its coordinates
+            for (int i = 0; i < 4; i++) {
+                const uint32_t* t = tab(r, input_byte(r, w, i));
+                wi.by_coords[i].fill(-1);
+                for (int b = 0; b < 256; b++) {
+                    const uint32_t z = t[b] ^ t[0];
+                    uint32_t coords = 0;
+                    for (int j = 0; j < 32; j++) coords |= (uint32_t)parity(inv[j] & z) << j;
+                    if (coords & ~(0xFFu << (8 * i))) { ni.ok = false; continue; }
+                    int16_t& slot = wi.by_coords[i][(coords >> (8 * i)) & 0xFF];
+                    if (slot >= 0) ni.ok = false;
+                    slot = (int16_t)b;
+                }
+            }
+        }
+    }
+    return ni;
+}
+
+const NgInverse& inverse_of(const uint32_t* tables) {
+    static std::mutex mu;
+    static std::map<const uint32_t*, std::unique_ptr<NgInverse>> cache;
+    std::lock_guard<std::mutex> g(mu);
+    auto& slot = cache[tables];
+    if (!slot) slot = std::make_unique<NgInverse>(build(tables));
+    return *slot;
+}
+
+void ng_encrypt_block(uint8_t* b, const uint8_t* key, const NgInverse& ni) {
+    auto kw = [&](int round, int i) { return ld32(key + round * 16 + 4 * i); };
+    uint8_t d[16];
+    std::memcpy(d, b, 16);
+    for (int r = 16; r >= 0; r--) {
+        uint8_t in[16];
+        for (int w = 0; w < 4; w++) {
+            const WordInverse& wi = ni.w[r][w];
+            const uint32_t z = ld32(d + 4 * w) ^ kw(r, w) ^ wi.zero;
+            uint32_t coords = 0;
+            for (int j = 0; j < 32; j++) coords |= (uint32_t)parity(wi.inv[j] & z) << j;
+            for (int i = 0; i < 4; i++) in[input_byte(r, w, i)] = (uint8_t)wi.by_coords[i][(coords >> (8 * i)) & 0xFF];
+        }
+        std::memcpy(d, in, 16);
+    }
+    std::memcpy(b, d, 16);
+}
+
+}   // namespace
+
+bool ng_can_encrypt(const uint32_t* tables) { return inverse_of(tables).ok; }
+
+void ng_encrypt(uint8_t* data, size_t len, std::string_view name, uint32_t length, const uint8_t* keys, const uint32_t* tables,
+                const uint8_t* lut) {
+    const NgInverse& ni = inverse_of(tables);
+    if (!ni.ok) throw std::runtime_error("NG tables cannot be inverted");
+    uint32_t hash = name_hash(name, lut);
+    uint32_t keyidx = (hash + length + (101 - 40)) % 0x65;
+    const uint8_t* key = keys + (size_t)keyidx * 272;
+    for (size_t i = 0; i + 16 <= len; i += 16) ng_encrypt_block(data + i, key, ni);
+}
+
+}   // namespace rk::rpfcrypto
