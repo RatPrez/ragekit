@@ -1,7 +1,8 @@
 #pragma once
 // Compiled shader effects (.fxc, common.rpf/shaders/win32_40_final) and shader presets (.sps, common.rpf/shaders/db).
-// read_fxc reads everything but the shader bytecode: the effect's constant buffers, its variables (type, register,
-// array count, default values, UI annotations) and its techniques. Layout from CodeWalker's FxcFile.
+// read_fxc reads the effect's shaders (their DXBC bytecode), constant buffers, variables (type, register, array count,
+// default values, UI annotations) and techniques. Layout from CodeWalker's FxcFile.
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -49,6 +50,13 @@ struct FxcCBuffer {
     uint32_t name_hash = 0;
 };
 
+/// One compiled shader of an effect.
+struct FxcShader {
+    std::string name;                // "VS_TransformD", "PS_DeferredTextured" ...
+    std::vector<uint8_t> bytecode;   // DXBC (D3DDisassemble reads it); empty for the "NULL" entry
+};
+
+/// Indices into FxcFile::shaders[stage]; 0 = none.
 struct FxcPass { uint8_t vs = 0, ps = 0, cs = 0, ds = 0, gs = 0, hs = 0; };
 struct FxcTechnique { std::string name; std::vector<FxcPass> passes; };
 
@@ -58,6 +66,7 @@ struct FxcFile {
     std::vector<FxcCBuffer> cbuffers;
     std::vector<FxcVariable> variables;   // both blocks, in file order
     std::vector<FxcTechnique> techniques;
+    std::array<std::vector<FxcShader>, 6> shaders;   // per stage (VS PS CS DS GS HS); entry 0 is "NULL"
     const FxcCBuffer* cbuffer(uint32_t name_hash) const;
 };
 

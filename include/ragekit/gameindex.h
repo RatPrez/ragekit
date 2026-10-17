@@ -108,7 +108,7 @@ struct GameIndexInfo {
 class GameIndex {
 public:
     /// Cache file format version (bump when the layout changes; older caches are rebuilt).
-    static constexpr uint32_t kFormat = 1;
+    static constexpr uint32_t kFormat = 2;   // 2: txd parents from vehicles.meta too
 
     /// Opens (or builds) the index of an install. Throws rk::Error (no keys, not a game folder).
     static GameIndex open(const std::string& game_dir, const GameIndexOptions& opt = {});
@@ -156,7 +156,8 @@ public:
     ResolvedDrawable resolve_drawable(const IndexedArchetype& a) const;
     std::optional<IndexedFile> resolve_txd(uint32_t name_hash) const;
     std::optional<IndexedFile> resolve_txd(const std::string& name) const;
-    /// Texture dictionaries a txd falls back on, nearest first (gtxd.ymt / gtxd.meta parents).
+    /// Texture dictionaries a txd falls back on, nearest first (gtxd.ymt / gtxd.meta parents, vehicles.meta
+    /// txdRelationships).
     std::vector<uint32_t> txd_parents(uint32_t txd_hash) const;
 
     // --- archetypes ----------------------------------------------------------------------

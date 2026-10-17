@@ -17,6 +17,7 @@ endif()
 option(RAGEKIT_BUILD_CLI      "Build the rk command line tool"   ${_ragekit_top})
 option(RAGEKIT_BUILD_TESTS    "Build the ragekit test programs"  ${_ragekit_top})
 option(RAGEKIT_BUILD_EXAMPLES "Build the programs in examples/"  ${_ragekit_top})
+option(RAGEKIT_BUILD_RENDER   "Build ragekit::render (drawables as materials, meshes and textures for a GPU)" ${_ragekit_top})
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -132,7 +133,26 @@ if (RAGEKIT_BUILD_EXAMPLES)
     endforeach()
 endif()
 
+# ragekit::render: what a renderer needs to draw the game's drawables with the game's shading (materials, meshes,
+# textures), with no graphics API in it. ragekit-viewer has an OpenGL backend for it.
+if (RAGEKIT_BUILD_RENDER)
+    add_library(ragekit_render STATIC
+        src/render/material.cpp
+        src/render/model.cpp
+        src/render/environment.cpp)
+    add_library(ragekit::render ALIAS ragekit_render)
+    target_link_libraries(ragekit_render PUBLIC ragekit)
+    if (MSVC)
+        target_compile_options(ragekit_render PRIVATE /W4)
+    else()
+        target_compile_options(ragekit_render PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    endif()
+endif()
+
 include(GNUInstallDirs)
 install(TARGETS ragekit EXPORT ragekitTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+if (RAGEKIT_BUILD_RENDER)
+    install(TARGETS ragekit_render EXPORT ragekitTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

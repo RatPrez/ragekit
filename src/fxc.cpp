@@ -27,7 +27,8 @@ struct In {
     }
 };
 
-void read_shader(In& in, int stage) {
+FxcShader read_shader(In& in, int stage) {
+    FxcShader sh;
     std::string name = in.str();
     if (name.empty()) name = in.str();   // geometry shaders sometimes carry an extra empty string first
     const uint8_t nvars = in.u8();
@@ -37,9 +38,13 @@ void read_shader(In& in, int stage) {
     if (stage == 4) in.u8();             // geometry shaders: one more byte
     const uint32_t len = in.u32();
     if (len > 0) {
-        in.skip(len);                    // the DXBC bytecode
+        in.need(len);
+        sh.bytecode.assign(in.d.data() + in.p, in.d.data() + in.p + len);   // the DXBC bytecode
+        in.skip(len);
         if (stage == 0 || stage == 1 || stage == 4) in.skip(2);   // shader model major / minor (VS, PS, GS)
     }
+    sh.name = std::move(name);
+    return sh;
 }
 
 FxcVariable read_variable(In& in) {
@@ -109,9 +114,9 @@ FxcFile read_fxc(std::span<const uint8_t> data) {
     for (int stage = 0; stage < 6; stage++) {   // VS PS CS DS GS HS
         uint8_t count = in.u8();
         if (count == 0) count = in.u8();   // hull shaders: sometimes a byte more
-        in.str();                          // "NULL"
+        f.shaders[stage].push_back({in.str(), {}});   // "NULL"
         in.u8(); in.u8(); in.u32();
-        for (int i = 1; i < count; i++) read_shader(in, stage);
+        for (int i = 1; i < count; i++) f.shaders[stage].push_back(read_shader(in, stage));
     }
     for (int block = 0; block < 2; block++) {   // the constant buffers and variables, then more buffers and the textures / samplers
         const uint8_t ncb = in.u8();

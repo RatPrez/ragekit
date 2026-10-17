@@ -668,6 +668,9 @@ std::string ydd_item_name(const Out& o, const Drawable& d, uint32_t hash) {
 
 std::string xml_float(float f) { return fstr(f); }
 
+const char* known_shader_name(uint32_t hash) { return lookup(kShaderNames, std::size(kShaderNames), hash); }
+const char* known_param_name(uint32_t hash) { return lookup(kParamNames, std::size(kParamNames), hash); }
+
 std::string write_drawable_xml(const Drawable& d, const XmlOptions& opt) {
     Out o(opt);
     o.s += kHeader; o.s += '\n';

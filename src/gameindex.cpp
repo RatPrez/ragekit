@@ -149,7 +149,7 @@ int setup_order(const std::string& xml) {
 
 using TxdPairs = std::vector<std::pair<std::string, std::string>>; // child, parent
 
-/// gtxd.meta (XML): <item><parent>x</parent><child>y</child></item>
+/// gtxd.meta (XML): <item><parent>x</parent><child>y</child></item>; vehicles.meta's <txdRelationships> alike
 TxdPairs gtxd_xml(const std::string& xml) {
     TxdPairs out;
     std::string low = lower(xml);
@@ -434,7 +434,8 @@ void scan_archive(Scan& s, const Rpf& rpf, const std::string& path, int32_t pare
                 scan_archive(s, child, where, (int32_t)ai, (uint32_t)i, false);
             } else if (ext == ".ytyp") {
                 read_ytyp_into(s, rpf, (int)i, where, file_local);
-            } else if (lname == "gtxd.ymt" || lname == "mph4_gtxd.ymt" || lname == "gtxd.meta") {
+            } else if (lname == "gtxd.ymt" || lname == "mph4_gtxd.ymt" || lname == "gtxd.meta" || lname == "vehicles.meta") {
+                // vehicles.meta: its <txdRelationships> are the same <parent>/<child> pairs (vehicle txds over vehshare)
                 Bytes data = rpf.extract((int)i);
                 TxdPairs pairs;
                 if (data.size() >= 4 && data[0] == 'R' && data[1] == 'B' && data[2] == 'F' && data[3] == '0') pairs = gtxd_rbf(data);

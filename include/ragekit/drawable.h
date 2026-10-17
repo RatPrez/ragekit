@@ -78,6 +78,12 @@ struct Shader {
     std::string texture_of(std::string_view sampler) const;
 };
 
+/// The name of a shader ("normal_spec") or preset ("normal_spec.sps") hash, from the game's shader list; nullptr when
+/// ragekit does not know it.
+const char* known_shader_name(uint32_t hash);
+/// The name of a shader parameter hash ("DiffuseSampler", "TextureSamplerDiffPal"); nullptr when ragekit does not know it.
+const char* known_param_name(uint32_t hash);
+
 struct ShaderGroup {
     std::optional<TextureDictionary> textures; // the drawable's embedded textures
     std::vector<Shader> shaders;
