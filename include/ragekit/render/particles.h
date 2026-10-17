@@ -115,6 +115,15 @@ struct ParticleRule {
     std::vector<std::string> unsimulated;  // behaviours the player does not do (decals, fog volumes, liquids ...)
     struct BiasLink { std::vector<uint32_t> props; uint8_t random_index = 0; };
     std::vector<BiasLink> bias_links;      // properties that share one random number
+    /// An effect a particle starts (ptxEffectSpawner): at a ratio of its life, or when it collides. Sparks, crackles and
+    /// many "_sp" effects are a carrier particle starting the real effect this way.
+    struct Spawner {
+        std::string effect;
+        float trigger = 0;                 // the ratio of the particle's life
+        float playback_min = 1, playback_max = 1, zoom_min = 1, zoom_max = 1;
+        bool tracks_position = false, tracks_direction = false;
+    };
+    std::optional<Spawner> spawn_at_ratio, spawn_on_collision;
 
     const ShaderVar* var(std::string_view name) const;
 };
@@ -192,6 +201,7 @@ struct Particle {
     uint32_t seed = 0;
     float alpha_scale = 1;
     Vec4 tint{1, 1, 1, 1};
+    bool spawned = false;        // its at-ratio effect started
 };
 
 /// What one event emitter has alive this frame.
@@ -208,21 +218,31 @@ public:
     EffectInstance(std::shared_ptr<const EffectRule> rule, const EffectLibrary& lib, uint32_t seed = 1);
 
     void set_transform(const Mat4& m) { transform_ = m; }
+    /// A ground (world z) particles with ptxu_Collision bounce on, as they would on the world's collision; none by default.
+    void set_ground(std::optional<float> z) { ground_ = z; }
+    /// Scales the effect (its zoom) and its speed (playback), as a spawner or a script does.
+    void set_scale(float zoom, float playback) { zoom_scale_ = zoom; playback_scale_ = playback; }
     const Mat4& transform() const { return transform_; }
     /// Advances by dt seconds (the effect's and the particles' playback rates applied).
     void update(float dt);
     /// Starts over.
     void restart();
-    /// No particle alive and the timeline over (never for a looping effect).
+    /// No particle alive, no spawned effect playing and the timeline over (never for a looping effect).
     bool finished() const;
     float time() const { return time_; }
 
+    /// This effect's batches (not those of the effects its particles started: all_batches has them too).
     const std::vector<ParticleBatch>& batches() const { return batches_; }
+    std::vector<const ParticleBatch*> all_batches() const;
     const EffectLibrary& library() const { return *lib_; }
     const EffectRule& rule() const { return *rule_; }
     /// The lights its particles give (ptxu_Light), world space. `intensity_mult`: the timecycle's particle light mult.
     std::vector<Light> lights(float intensity_mult = 1) const;
     size_t particle_count() const;
+
+    EffectInstance(EffectInstance&&) = default;
+    EffectInstance& operator=(EffectInstance&&) = default;
+    ~EffectInstance();
 
 private:
     struct EmitterState { float accumulated = 0; bool fired = false; float rate_r = 0; };
@@ -234,7 +254,9 @@ private:
     Mat4 transform_ = Mat4::identity();
     std::vector<ParticleBatch> batches_;
     std::vector<EmitterState> emitters_;
-    float time_ = 0, duration_ = 1, playback_ = 1, zoom_ = 1;
+    float time_ = 0, duration_ = 1, playback_ = 1, zoom_ = 1, zoom_scale_ = 1, playback_scale_ = 1;
+    std::vector<std::unique_ptr<EffectInstance>> children_;   // effects its particles started
+    std::optional<float> ground_;
     int loop_ = 0;
     bool timeline_done_ = false;
     std::mt19937 rng_;

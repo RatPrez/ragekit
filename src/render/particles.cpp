@@ -112,6 +112,22 @@ std::shared_ptr<ParticleRule> read_particle(const PtxBlock& p, const ParticleDic
     r->normal_spec = p.get<uint8_t>(0x1EC) != 0;
     r->sort_type = p.get<uint8_t>(0x220);
     r->draw_type = p.get<uint8_t>(0x221);
+    // the effect spawners (ptxEffectSpawner at 0x20 and 0x90: at a ratio of the particle's life, on collision)
+    auto spawner = [&](uint32_t at) -> std::optional<ParticleRule::Spawner> {
+        ParticleRule::Spawner sp;
+        sp.effect = p.string_at(at + 0x60);
+        if (sp.effect.empty()) return std::nullopt;
+        sp.playback_min = p.get<float>(at + 0x1C);
+        sp.playback_max = p.get<float>(at + 0x3C);
+        sp.zoom_min = p.get<float>(at + 0x24);
+        sp.zoom_max = p.get<float>(at + 0x44);
+        sp.trigger = p.get<float>(at + 0x68);
+        sp.tracks_position = p.get<uint8_t>(at + 0x6D) != 0;
+        sp.tracks_direction = p.get<uint8_t>(at + 0x6E) != 0;
+        return sp;
+    };
+    r->spawn_at_ratio = spawner(0x20);
+    r->spawn_on_collision = spawner(0x90);
 
     // shader variables
     static const uint32_t kDiffuse = joaat_lower("DiffuseTex2");
@@ -528,6 +544,7 @@ float EffectInstance::rand() { return std::uniform_real_distribution<float>(0, 1
 void EffectInstance::restart() {
     batches_.clear();
     emitters_.clear();
+    children_.clear();
     time_ = 0;
     loop_ = 0;
     timeline_done_ = false;
@@ -553,7 +570,7 @@ void EffectInstance::restart() {
 }
 
 bool EffectInstance::finished() const {
-    if (!timeline_done_) return false;
+    if (!timeline_done_ || !children_.empty()) return false;
     for (auto& b : batches_) if (!b.particles.empty()) return false;
     return true;
 }
@@ -561,6 +578,7 @@ bool EffectInstance::finished() const {
 size_t EffectInstance::particle_count() const {
     size_t n = 0;
     for (auto& b : batches_) n += b.particles.size();
+    for (auto& c : children_) n += c->particle_count();
     return n;
 }
 
@@ -569,7 +587,7 @@ void EffectInstance::spawn(size_t event, float er, int count) {
     const EmitterRule& em = *ev.emitter;
     const ParticleRule& pr = *ev.particle;
     ParticleBatch& batch = batches_[event];
-    const float zoom = zoom_ * lerp(ev.zoom_min, ev.zoom_max, emitters_[event].rate_r);   // the event's is a scalar (1)
+    const float zoom = zoom_ * zoom_scale_ * lerp(ev.zoom_min, ev.zoom_max, emitters_[event].rate_r);   // the event's is a scalar (1)
     // the effect's tint: its keyframes (min or between min and max) times the event's
     Vec4 tint = rule_->tint_min.at(time_ / duration_);
     if (rule_->tint_max_enable) tint = lerp4(tint, rule_->tint_max.at(time_ / duration_), rand());
@@ -582,7 +600,7 @@ void EffectInstance::spawn(size_t event, float er, int count) {
         auto r = [&](const Keyframe& kf) { const float v = hash01(p.seed, kf.random_index); return kf.invert_bias ? 1 - v : v; };
         p.life = std::max(0.01f, scalar(r(em.life), em.life, er));
         p.playback = std::max(0.0f, em.playback_rate.at(er).x);
-        p.size_scale = xyz(em.size_scale.at(er)) * (zoom / 100);
+        p.size_scale = xyz(em.size_scale.at(er)) * 0.01f;   // a percentage; the zoom moves and spreads the effect, its sizes stay (checked by eye: sparks, fire)
         p.tint = tint;
         // where it starts and where it heads, in the effect's space, then into the world
         Vec3 local = em.creation ? sample_domain(*em.creation, er, rng_) : Vec3{};
@@ -624,7 +642,7 @@ void EffectInstance::spawn(size_t event, float er, int count) {
 
 void EffectInstance::update(float dt_in) {
     if (!rule_ || dt_in <= 0) return;
-    const float dt = dt_in * playback_;
+    const float dt = dt_in * playback_ * playback_scale_;
     // ---- the timeline: each event emits while the effect's ratio is inside its range
     if (!timeline_done_) {
         time_ += dt;
@@ -674,11 +692,27 @@ void EffectInstance::update(float dt_in) {
             if (p.age >= p.life) { ps[i] = ps.back(); ps.pop_back(); continue; }
             const float t = p.ratio();
             const float er = 0;   // the emitter scalars are taken at the particle's birth
+            if (pr.spawn_at_ratio && !p.spawned && t >= pr.spawn_at_ratio->trigger && children_.size() < 64) {
+                p.spawned = true;
+                const auto& sp = *pr.spawn_at_ratio;
+                if (auto rule = lib_->effect(sp.effect)) {
+                    auto child = std::make_unique<EffectInstance>(rule, *lib_, p.seed);
+                    Mat4 m = transform_;   // the parent's turn, at the particle
+                    m.at(3, 0) = p.position.x; m.at(3, 1) = p.position.y; m.at(3, 2) = p.position.z;
+                    child->set_transform(m);
+                    child->set_ground(ground_);
+                    const float k = hash01(p.seed, 3000);
+                    child->set_scale(lerp(sp.zoom_min, sp.zoom_max, k) * zoom_scale_,
+                                     std::max(lerp(sp.playback_min, sp.playback_max, k), 0.01f) * playback_scale_);
+                    child->restart();
+                    children_.push_back(std::move(child));
+                }
+            }
             if (pr.acceleration) {
                 Vec3 a = xyz(range(p, pr, pr.acceleration->min, pr.acceleration->max, t));
                 if (pr.acceleration->space == 1) a = vector(transform_, a);
                 a = a * (em.acceleration_scale.at(er).x / 100);
-                if (pr.acceleration->zoom) a = a * zoom_;
+                if (pr.acceleration->zoom) a = a * (zoom_ * zoom_scale_);
                 if (pr.acceleration->gravity) a.z -= 9.8f;
                 p.velocity = p.velocity + a * pdt;
             }
@@ -702,6 +736,35 @@ void EffectInstance::update(float dt_in) {
                 p.velocity = p.velocity + mulv(j, vn) * pdt;
             }
             if (pr.velocity) p.position = p.position + p.velocity * pdt;
+            // ptxu_Collision against the ground: bounce (bounciness % of the speed, the direction varied), come to rest
+            // below the rest speed, die by the kill chance; the on-collision spawner starts its effect there
+            if (pr.collision && ground_) {
+                const auto& c = *pr.collision;
+                const float radius = std::max(p.size.x, p.size.y) * 0.5f * c.radius_mult;
+                if (p.position.z - radius < *ground_ && p.velocity.z < 0 && hash01(p.seed ^ (uint32_t)(p.age * 1000), 4000) * 100 < (float)c.chance) {
+                    p.position.z = *ground_ + radius;
+                    const float bounce = scalar(pick(p, pr, c.bounce), c.bounce, t) / 100;
+                    const Vec4 var = c.bounce_dir.at(t);
+                    const float jitter = lerp(var.x, var.y, hash01(p.seed ^ (uint32_t)(p.age * 997), 4001));
+                    const float a = hash01(p.seed ^ (uint32_t)(p.age * 991), 4002) * 2 * kPi;
+                    const float speed = p.velocity.length() * bounce;
+                    Vec3 v{p.velocity.x * bounce, p.velocity.y * bounce, -p.velocity.z * bounce};
+                    v = v + Vec3{std::cos(a), std::sin(a), 0} * (jitter * speed);
+                    p.velocity = v.length() < c.rest_speed ? Vec3{} : v;
+                    if (hash01(p.seed ^ (uint32_t)(p.age * 983), 4003) * 100 < (float)c.kill_chance) p.age = p.life;
+                    if (pr.spawn_on_collision && children_.size() < 64)
+                        if (auto rule = lib_->effect(pr.spawn_on_collision->effect)) {
+                            auto child = std::make_unique<EffectInstance>(rule, *lib_, p.seed ^ 0x5bd1e995u);
+                            Mat4 m = transform_;
+                            m.at(3, 0) = p.position.x; m.at(3, 1) = p.position.y; m.at(3, 2) = p.position.z;
+                            child->set_transform(m);
+                            child->set_ground(ground_);
+                            child->set_scale(lerp(pr.spawn_on_collision->zoom_min, pr.spawn_on_collision->zoom_max, 0.5f) * zoom_scale_, playback_scale_);
+                            child->restart();
+                            children_.push_back(std::move(child));
+                        }
+                }
+            }
             if (pr.rotation) {
                 const Vec3 speed = xyz(range(p, pr, pr.rotation->speed_min, pr.rotation->speed_max, t));
                 if (pr.rotation->accumulate) p.angles = p.angles + speed * pdt;
@@ -753,6 +816,19 @@ void EffectInstance::update(float dt_in) {
             i++;
         }
     }
+
+    // the effects its particles started: played at the effect's rate, dropped once over
+    for (auto& c : children_) c->update(dt_in);   // their own scale holds this one's
+    std::erase_if(children_, [](const std::unique_ptr<EffectInstance>& c) { return c->finished(); });
+}
+
+EffectInstance::~EffectInstance() = default;
+
+std::vector<const ParticleBatch*> EffectInstance::all_batches() const {
+    std::vector<const ParticleBatch*> out;
+    for (auto& b : batches_) out.push_back(&b);
+    for (auto& c : children_) for (auto* b : c->all_batches()) out.push_back(b);
+    return out;
 }
 
 std::vector<Light> EffectInstance::lights(float intensity_mult) const {
@@ -780,6 +856,7 @@ std::vector<Light> EffectInstance::lights(float intensity_mult) const {
         l.seed = p.seed;
         if (l.intensity > 0 && l.range > 0) out.push_back(l);
     }
+    for (auto& c : children_) for (auto& l : c->lights(intensity_mult)) out.push_back(l);
     return out;
 }
 
