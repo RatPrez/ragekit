@@ -24,8 +24,14 @@ struct DrawableBlocks {
     uint64_t models_size = 0;
 };
 
-/// Writes every sub-structure of the drawable (shader group, skeleton, models...).
-DrawableBlocks prepare_drawable(Builder& b, const Drawable& d);
+/// The skeletons one file has written, keyed by their bytes. A fragment's drawables share one skeleton block (the main
+/// drawable's and a child's in the game's glass panes): the game constructs it once, so a second, identical copy keeps the
+/// file's vtable word and its first virtual call crashes.
+struct SkeletonCache { std::vector<std::pair<Bytes, BlockId>> written; };
+
+/// Writes every sub-structure of the drawable (shader group, skeleton, models...). With `skeletons`, a skeleton identical to
+/// one written before points at that block.
+DrawableBlocks prepare_drawable(Builder& b, const Drawable& d, SkeletonCache* skeletons = nullptr);
 /// Writes offsets 0x10..0xA8 of a drawable struct; the writer must be positioned at 0x10.
 void write_drawable_base(BlockWriter& w, const Drawable& d, const DrawableBlocks& parts, Builder& b);
 /// Writes a complete 208 byte gtaDrawable block; `root` makes it the resource root.

@@ -60,11 +60,7 @@ FragDrawable read_frag_drawable(const Reader& r, uint64_t ptr, std::map<uint64_t
     const uint64_t bound_ptr = r.u64(ptr + 0xF0), inds_ptr = r.u64(ptr + 0xF8), mats_ptr = r.u64(ptr + 0x108);
     const uint16_t inds_count = r.u16(ptr + 0x100), cap = r.u16(ptr + 0x102);
     d.frag_matrices_count = r.u16(ptr + 0x110);
-    if (bound_ptr) {
-        auto& b = bounds[bound_ptr];
-        if (!b) b = read_bound(r, bound_ptr);
-        d.bound = b;
-    }
+    if (bound_ptr) d.bound = read_bound(r, bound_ptr, &bounds);   // often a child of the archetype's composite: the same object
     d.frag_matrices_inds = r.array<uint64_t>(inds_ptr, inds_count);
     d.frag_matrices = read_transforms(r, mats_ptr, cap);
     d.name = r.str(r.u64(ptr + 0x130));
@@ -81,12 +77,7 @@ FragPhysicsLod read_physics_lod(const Reader& r, uint64_t ptr, std::map<uint64_t
     const uint8_t unk1_count = r.u8(ptr + 0x118), unk2_count = r.u8(ptr + 0x119), groups_count = r.u8(ptr + 0x11A),
                   children_count = r.u8(ptr + 0x11D);
     clear(lod.raw, kLodPointers);
-    auto bound = [&](uint64_t bp) -> BoundPtr {
-        if (!bp) return nullptr;
-        auto& b = bounds[bp];
-        if (!b) b = read_bound(r, bp);
-        return b;
-    };
+    auto bound = [&](uint64_t bp) -> BoundPtr { return read_bound(r, bp, &bounds); };
 
     if (artic_ptr) {
         FragArticulatedBody ab;
@@ -153,14 +144,7 @@ class Writer {
 public:
     explicit Writer(Builder& b) : b_(b) {}
 
-    BlockId bound(const BoundPtr& p) {
-        if (!p) return {};
-        auto it = bounds_.find(p.get());
-        if (it != bounds_.end()) return it->second;
-        const BlockId id = write_bound(b_, *p);
-        bounds_.emplace(p.get(), id);
-        return id;
-    }
+    BlockId bound(const BoundPtr& p) { return p ? write_bound(b_, *p, &bounds_) : BlockId{}; }   // one block per bound, composite children included
     BlockId str(const std::string& s) {
         if (s.empty()) return {};
         auto it = strings_.find(s);
@@ -173,7 +157,7 @@ public:
     BlockId drawable(const FragDrawable& d) {
         if (d.frag_matrices_inds.size() > 0xFFFF || d.frag_matrices.size() > 0xFFFF) throw Error("yft: too many fragment matrices");
         const BlockId blk = b_.alloc(Segment::System, 336);
-        const DrawableBlocks parts = prepare_drawable(b_, d);
+        const DrawableBlocks parts = prepare_drawable(b_, d, &skeletons_);
         const BlockId inds = d.frag_matrices_inds.empty() ? BlockId{} : b_.array(Segment::System, d.frag_matrices_inds);
         BlockId mats;
         if (!d.frag_matrices.empty()) {
@@ -325,6 +309,7 @@ private:
 
     Builder& b_;
     std::map<const Bound*, BlockId> bounds_;
+    SkeletonCache skeletons_;   // the drawables share one skeleton block, as in the game's files
     std::map<std::string, BlockId> strings_;
 };
 

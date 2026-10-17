@@ -200,7 +200,7 @@ void read_geometry(const Reader& r, uint64_t ptr, Bound& b) {
     b.geometry = std::move(g);
 }
 
-void read_composite(const Reader& r, uint64_t ptr, Bound& b) {
+void read_composite(const Reader& r, uint64_t ptr, Bound& b, std::map<uint64_t, std::shared_ptr<Bound>>* seen) {
     auto c = r.cursor(ptr + 0x70);
     uint64_t children_ptr = c.u64();
     uint64_t tr1_ptr = c.u64();
@@ -227,7 +227,7 @@ void read_composite(const Reader& r, uint64_t ptr, Bound& b) {
     if (b.has_child_transforms2) b.child_transforms2 = tr2;
     for (uint16_t i = 0; i < count; i++) {
         BoundChild ch;
-        ch.bound = read_bound(r, ptrs[i]);
+        ch.bound = read_bound(r, ptrs[i], seen);
         if (i < tr1.size()) ch.transform = tr1[i];
         else if (i < tr2.size()) ch.transform = tr2[i];
         if (i < boxes.size()) ch.bbox = boxes[i];
@@ -239,9 +239,14 @@ void read_composite(const Reader& r, uint64_t ptr, Bound& b) {
 
 } // namespace
 
-std::shared_ptr<Bound> read_bound(const Reader& r, uint64_t ptr) {
+std::shared_ptr<Bound> read_bound(const Reader& r, uint64_t ptr, std::map<uint64_t, std::shared_ptr<Bound>>* seen) {
     if (ptr == 0) return nullptr;
+    if (seen) {
+        auto it = seen->find(ptr);
+        if (it != seen->end() && it->second) return it->second;
+    }
     auto b = std::make_shared<Bound>();
+    if (seen) (*seen)[ptr] = b;   // before the children: a child pointing back is not read again
     auto c = r.cursor(ptr + 0x10);
     b->type = (BoundType)c.u8();
     c.u8(); c.u16();
@@ -260,7 +265,7 @@ std::shared_ptr<Bound> read_bound(const Reader& r, uint64_t ptr) {
     b->volume = c.f32();
     switch (b->type) {
         case BoundType::Geometry: case BoundType::GeometryBVH: read_geometry(r, ptr, *b); break;
-        case BoundType::Composite: read_composite(r, ptr, *b); break;
+        case BoundType::Composite: read_composite(r, ptr, *b, seen); break;
         case BoundType::Capsule: case BoundType::Disc: case BoundType::Cylinder: b->unk70 = r.f32(ptr + 0x70); break;
         default: break; // sphere, box, cloth: the base struct holds everything
     }
@@ -330,8 +335,13 @@ std::vector<int16_t> quantise(const std::vector<Vec3>& v, const Vec3& q) {
 
 } // namespace
 
-BlockId write_bound(Builder& b, const Bound& bound) {
+BlockId write_bound(Builder& b, const Bound& bound, std::map<const Bound*, BlockId>* written) {
+    if (written) {
+        auto it = written->find(&bound);
+        if (it != written->end()) return it->second;
+    }
     BlockId blk = b.alloc(Segment::System, bound_size(bound.type));
+    if (written) (*written)[&bound] = blk;
     BlockWriter w(b, blk);
     w.u32(vft_of(bound.type));
     w.u32(1);
@@ -423,7 +433,7 @@ BlockId write_bound(Builder& b, const Bound& bound) {
             std::vector<uint32_t> fl1, fl2;
             for (size_t i = 0; i < n; i++) {
                 auto& ch = bound.children[i];
-                if (ch.bound) b.pointer(children, i * 8, write_bound(b, *ch.bound));
+                if (ch.bound) b.pointer(children, i * 8, write_bound(b, *ch.bound, written));
                 trs.push_back(ch.transform);
                 bbs.push_back(ch.bbox);
                 fl1.push_back(ch.flags1); fl1.push_back(ch.flags2);

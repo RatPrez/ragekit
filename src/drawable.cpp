@@ -1357,7 +1357,7 @@ void write_light(BlockWriter& w, const Light& l) {
 
 void write_light_at(BlockWriter& w, const Light& l) { write_light(w, l); }
 
-DrawableBlocks prepare_drawable(Builder& b, const Drawable& d_in) {
+DrawableBlocks prepare_drawable(Builder& b, const Drawable& d_in, SkeletonCache* skeletons) {
     // Legacy: geometries read from Enhanced (whose files use only floats) of shaders the game's Legacy drawables give
     // another layout than the standard one (cloth: half floats, signed normals) get Legacy's
     const Drawable* dp = &d_in;
@@ -1386,7 +1386,17 @@ DrawableBlocks prepare_drawable(Builder& b, const Drawable& d_in) {
     const Drawable& d = *dp;
     DrawableBlocks parts;
     if (d.shader_group) parts.shader_group = write_shader_group(b, *d.shader_group);
-    if (d.skeleton) parts.skeleton = write_skeleton(b, *d.skeleton);
+    if (d.skeleton && skeletons) {
+        Builder scratch;   // the skeleton's bytes on their own: equal bytes, the same skeleton
+        scratch.set_game(b.game());
+        write_skeleton(scratch, *d.skeleton);
+        Bytes key = scratch.build(rsc::kYdr, false);
+        for (const auto& [bytes, blk] : skeletons->written) if (bytes == key) parts.skeleton = blk;
+        if (!parts.skeleton.valid()) {
+            parts.skeleton = write_skeleton(b, *d.skeleton);
+            skeletons->written.emplace_back(std::move(key), parts.skeleton);
+        }
+    } else if (d.skeleton) parts.skeleton = write_skeleton(b, *d.skeleton);
     if (d.joints) parts.joints = write_joints(b, *d.joints);
 
     // one block holding every LOD list: header + pointers, then the models (geometries embedded)

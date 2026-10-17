@@ -9,6 +9,7 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include "ragekit/gameindex.h"
 #include "ragekit/manifest.h"
@@ -352,7 +353,30 @@ static void compare_lod(Cmp& c, const FragPhysicsLod& a, const FragPhysicsLod& b
     }
     c.eq(a.unknown_data1, b.unknown_data1, p + ".unknown_data1"); c.eq(a.unknown_data2, b.unknown_data2, p + ".unknown_data2");
 }
+// The distinct bound objects a fragment reaches (drawables, physics LODs, archetypes, composite children): the reader makes
+// one object per address, so a file that writes a shared bound twice reads back with more of them (the game crashed on a
+// glass pane whose drawable's Box was a second copy of its composite's child).
+static size_t distinct_bounds(const Fragment& f) {
+    std::set<const Bound*> seen;
+    std::function<void(const BoundPtr&)> add = [&](const BoundPtr& b) {
+        if (!b || !seen.insert(b.get()).second) return;
+        for (const BoundChild& ch : b->children) add(ch.bound);
+    };
+    auto drawable = [&](const std::optional<FragDrawable>& d) { if (d) add(d->bound); };
+    drawable(f.drawable);
+    drawable(f.drawable_cloth);
+    for (const FragDrawable& d : f.drawable_array) add(d.bound);
+    for (const auto& lod : f.physics) {
+        if (!lod) continue;
+        add(lod->bound);
+        if (lod->archetype) add(lod->archetype->bound);
+        if (lod->archetype_damaged) add(lod->archetype_damaged->bound);
+        for (const FragChild& ch : lod->children) { drawable(ch.drawable); drawable(ch.drawable_damaged); }
+    }
+    return seen.size();
+}
 static void compare_fragment(Cmp& c, const Fragment& a, const Fragment& b) {
+    c.eq(distinct_bounds(a), distinct_bounds(b), "yft.bounds shared as in the file");
     eq_mem(c, a.raw, b.raw, "yft.raw");
     c.eq(a.name, b.name, "yft.name");
     eq_mem(c, a.sphere_center, b.sphere_center, "yft.sphere_center"); eq_mem(c, a.sphere_radius, b.sphere_radius, "yft.sphere_radius");
