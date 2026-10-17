@@ -12,6 +12,7 @@
 #include "ragekit/fragment.h"
 #include "ragekit/texture.h"
 #include "ragekit/types.h"
+#include "ragekit/render/light.h"
 #include "ragekit/render/material.h"
 
 namespace rk {
@@ -90,6 +91,7 @@ struct Model {
     std::vector<Mesh> meshes;
     std::vector<TextureData> textures;   // every texture a material names that was found, by hash
     std::vector<std::string> missing;    // texture names a material samples that no dictionary had
+    std::vector<Light> lights;           // the drawables' light attributes on their bones (model space)
     Vec3 bounds_min, bounds_max;         // model space, transforms applied
     /// What the spans point into: the drawable(s) and the dictionaries the textures came from.
     std::vector<std::shared_ptr<const void>> sources;

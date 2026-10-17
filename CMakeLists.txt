@@ -139,7 +139,10 @@ if (RAGEKIT_BUILD_RENDER)
     add_library(ragekit_render STATIC
         src/render/material.cpp
         src/render/model.cpp
-        src/render/environment.cpp)
+        src/render/environment.cpp
+        src/render/timecycle.cpp
+        src/render/light.cpp
+        src/render/particles.cpp)
     add_library(ragekit::render ALIAS ragekit_render)
     target_link_libraries(ragekit_render PUBLIC ragekit)
     if (MSVC)

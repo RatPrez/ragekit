@@ -191,6 +191,22 @@ const TextureData* Model::texture(uint32_t hash) const {
     return nullptr;
 }
 
+// A bone's matrix by its tag (lights name their bone by tag): the skeleton's bind pose, else the fragment's default pose.
+Mat4 bone_by_tag(const Drawable& d, uint16_t tag, const Fragment* f = nullptr) {
+    if (!d.skeleton) return Mat4::identity();
+    const Bone* b = d.skeleton->find_tag(tag);
+    if (!b) return Mat4::identity();
+    if (f)
+        if (auto pose = frag_pose(*f, (uint32_t)b->index)) return *pose;
+    return d.skeleton->bind_matrix((size_t)b->index);
+}
+
+void add_lights(Model& out, const std::vector<rk::Light>& attrs, const Drawable& d, const Fragment* f = nullptr) {
+    auto ls = lights_of(attrs, [&](uint16_t tag) { return bone_by_tag(d, tag, f); });
+    for (auto& l : ls) l.seed += (uint32_t)out.lights.size() * 7919u;
+    out.lights.insert(out.lights.end(), ls.begin(), ls.end());
+}
+
 Model build_model(std::shared_ptr<const Drawable> d, const TextureDictionaries& txds, Lod lod) {
     Builder b;
     b.txds = &txds;
@@ -198,6 +214,7 @@ Model build_model(std::shared_ptr<const Drawable> d, const TextureDictionaries& 
         b.out.name = d->name;
         const Drawable& dr = *d;
         b.add(dr, nullptr, [&](const rk::Model& m) { return bone_placement(dr, m); }, lod);
+        add_lights(b.out, dr.lights, dr);
         b.out.sources.push_back(d);
     }
     b.finish();
@@ -212,6 +229,7 @@ Model build_model(const std::vector<std::shared_ptr<const Drawable>>& parts, con
         if (b.out.name.empty()) b.out.name = d->name;
         const Drawable& dr = *d;
         b.add(dr, nullptr, [&](const rk::Model& m) { return bone_placement(dr, m); }, lod);
+        add_lights(b.out, dr.lights, dr);
         b.out.sources.push_back(d);
     }
     b.finish();
@@ -231,6 +249,8 @@ Model build_model(std::shared_ptr<const Fragment> f, const TextureDictionaries& 
                 auto pose = frag_pose(*f, m.bone_index());
                 return pose ? *pose : bone_placement(*main, m);
             }, lod);
+            add_lights(b.out, f->lights, *main, f.get());
+            add_lights(b.out, main->lights, *main, f.get());
         }
         // the physics children (wheels, doors, breakable parts) at their LOD 1 transforms; a child without a shader
         // group draws with the main drawable's shaders

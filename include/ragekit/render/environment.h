@@ -1,25 +1,71 @@
-// ragekit render - the light a scene is drawn in: one sun, sky / ground ambient, exposure. Game space: Z up.
-// The presets are rat-tooling's (shared/ui/gta/shading.js LIGHTS), tuned by eye to the game's timecycles; the game's own
-// reflection cube map is stood in for by the sky / ground colours.
+// ragekit render - the light a scene is drawn in, as the game's lighting shaders take it: the sun, the natural (sky) and
+// artificial (interior / exterior) ambient, the local lights' time of day, and the exposure and tone map of postfx.fxc.
+// Game space: Z up. Colours are linear with their intensity applied.
+//
+// Timecycle (render/timecycle.h) fills one from the game's weather and hour; the presets need no game files.
 #pragma once
 #include <string_view>
 #include "ragekit/types.h"
 
 namespace rk::render {
 
-struct Environment {
-    Vec3 sun_direction{0.4f, -0.45f, 0.8f};   // towards the sun, normalised by the backend
-    Vec3 sun_colour{2.3f, 2.1f, 1.8f};        // linear, intensity included
-    Vec3 sky_colour{0.42f, 0.48f, 0.6f};      // ambient from above
-    Vec3 ground_colour{0.16f, 0.14f, 0.12f};  // ambient from below
-    float exposure = 1;
-    float env_strength = 1;                   // the reflection term
-    bool vertex_ao = true;                    // COLOR0.r as ambient occlusion
+/// Hable's filmic curve as postfx.fxc's PS_Composite takes it (BrightTonemapParams / DarkTonemapParams).
+struct Tonemap {
+    float a = 0.22f, b = 0.3f, c = 0.1f, d = 0.2f, e = 0.01f, f = 0.3f, w = 4.0f;
+};
 
-    /// "day", "overcast", "evening", "night", "interior", "studio"; day for anything else.
+struct Environment {
+    // ---- the sun (gDirectionalLight / gDirectionalColour): the moon at night
+    Vec3 sun_direction{0.4f, -0.45f, 0.8f};   // towards the sun, normalised by the backend
+    Vec3 sun_colour{50, 46, 40};              // light_dir_col * light_dir_mult
+
+    // ---- ambient (gLightNaturalAmbient0/1, gLightArtificial{Int,Ext}Ambient0/1, gDirectionalAmbientColour): named, as the
+    // timecycle does, by where the light goes: `down` falls on surfaces facing up (the sky's blue by day), `up` on surfaces
+    // facing down (the ground's bounce); blended by t = max((N.z + wrap) / (1 + wrap), 0). Natural ambient is scaled by
+    // the vertex colour's R (squared), artificial by its G (squared).
+    Vec3 natural_down{0.9f, 1.2f, 1.6f}, natural_up{2.6f, 3.0f, 3.8f};
+    Vec3 artificial_ext_down{0, 0, 0}, artificial_ext_up{0, 0, 0};
+    Vec3 artificial_int_down{0.3f, 0.3f, 0.3f}, artificial_int_up{0.5f, 0.5f, 0.5f};
+    float ambient_wrap = 0.3f;                 // light_amb_down_wrap
+    Vec3 directional_ambient{0, 0, 0};         // along the sun, times sat(N.L)
+    float reflection = 1;                      // the spec-weighted reflection term (the sky stands in for the cube map)
+
+    // ---- the backdrop and its reflection
+    Vec3 sky_zenith{3.0f, 4.2f, 6.5f}, sky_horizon{5.0f, 5.5f, 6.0f};
+
+    // ---- local lights
+    float hour = 13;                           // their time flags
+    float light_falloff_mult = 1;              // light_falloff_mult: scales every light's range
+    float particle_light_mult = 1, particle_emissive_mult = 1;
+    float corona_size = 0.75f, corona_intensity = 0.5f;   // misc.coronas.sizeScaleGlobal / intensityScaleGlobal * sprite_size / brightness
+    bool lights = true;                        // draw the models' lights and the extra ones
+    bool volumes = true;                       // the volumes of LightDrawVolume lights
+    bool coronas = true;
+    float volume_intensity = 1;                // scales every light volume (their brightness is not yet checked in game)
+
+    // ---- postfx: exposure (EV, the multiplier is 2^EV) and the tone map
+    bool auto_exposure = true;                 // EV from the frame's mean luminance: scale * lum^power + offset
+    float exposure = 0;                        // postfx_exposure: added to the automatic EV; the EV itself when not automatic
+    float exposure_min = -3.5f, exposure_max = 5;
+    float exposure_curve[3] = {-106.2f, 0.007f, 104.7f};   // visualsettings.dat Exposure.curve.scale / power / offset
+    Tonemap tonemap_dark, tonemap_bright;      // blended by EV between the two exposures below
+    float tonemap_exposure_dark = 3, tonemap_exposure_bright = -0.5f;
+    Vec3 correct_colour{1, 1, 1}, shift_colour{1, 1, 1};   // postfx_correct_col / postfx_shift_col
+    float correct_cutoff = 0, shift_cutoff = 0, saturation = 1;
+    float gamma = 1 / 2.2f;                    // PS_Composite's final power (the game's brightness setting)
+    bool tonemap = true;                       // false: the colour times 2^EV, clamped (no curve, no correction)
+
+    bool interior = false;                     // the artificial interior ambient (the game's interior stencil)
+    bool vertex_ao = true;                     // COLOR0.r / .g as the ambient's occlusion
+
+    /// "day", "overcast", "evening", "night", "interior", "studio"; day for anything else. Values from the game's
+    /// EXTRASUNNY / OVERCAST timecycles at 13:00, 19:00 and 23:00; studio has a fixed exposure.
     static Environment preset(std::string_view name);
     /// The sun from an azimuth (degrees from +Y, turning towards +X) and elevation (degrees above the horizon).
     void set_sun(float azimuth_deg, float elevation_deg);
+    /// The sun's path over the day (time.xml's sun_roll; CodeWalker's reading of it): towards the sun at `hour`, the moon at
+    /// night.
+    static Vec3 sun_at(float hour, float sun_roll_deg = 122, float moon_roll_deg = -122);
 };
 
 /// What a backend shows instead of the lit colour.
