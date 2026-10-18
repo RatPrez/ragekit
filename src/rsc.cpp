@@ -161,12 +161,19 @@ Resource Resource::load(std::span<const uint8_t> file) {
     std::memcpy(&r.version, file.data() + 4, 4);
     std::memcpy(&r.system_flags.value, file.data() + 8, 4);
     std::memcpy(&r.graphics_flags.value, file.data() + 12, 4);
-    const size_t sys = (size_t)r.system_flags.total_size(), gfx = (size_t)r.graphics_flags.total_size();
-    Bytes body = inflate(file.subspan(16), sys + gfx);
-    if (body.size() < sys) throw Error("resource body ends inside its system segment");
-    body.resize(sys + gfx);
-    r.system.assign(body.begin(), body.begin() + (ptrdiff_t)sys);
+    const uint64_t sys = r.system_flags.total_size(), gfx = r.graphics_flags.total_size();
+    // the page flags are the file's word: a segment past 256 MB cannot be addressed (no such file exists), so one is refused
+    // before anything of that size is allocated
+    if (sys > kMaxSegmentSize || gfx > kMaxSegmentSize)
+        throw Error("resource pages of " + std::to_string(sys) + " + " + std::to_string(gfx) + " bytes: a segment holds at most " + std::to_string(kMaxSegmentSize));
+    // the system segment keeps the inflated buffer, the graphics segment is copied out of its tail; a stream shorter than
+    // the pages (the game's files fill them exactly) leaves the rest zero
+    Bytes body = inflate(file.subspan(16), (size_t)(sys + gfx));
+    if (body.size() < sys) throw Error("resource body ends inside its system segment (" + std::to_string(body.size()) + " of " + std::to_string(sys) + " bytes)");
+    body.resize((size_t)(sys + gfx));
     r.graphics.assign(body.begin() + (ptrdiff_t)sys, body.end());
+    body.resize((size_t)sys);
+    r.system = std::move(body);
     return r;
 }
 
@@ -188,10 +195,19 @@ const uint8_t* Resource::at(uint64_t ptr, size_t need) const {
     if (!sys && !in_graphics(ptr)) throw Error("pointer " + hex(ptr) + " is in neither segment");
     const Bytes& seg = sys ? system : graphics;
     const uint64_t off = ptr - (sys ? kSystemBase : kGraphicsBase);
-    if (off + need > seg.size())
+    // off is under 0x10000000 (in_system / in_graphics); need is the caller's and may be anything, so no sum that could wrap
+    if (off > seg.size() || need > seg.size() - off)
         throw Error("pointer " + hex(ptr) + " + " + std::to_string(need) + " runs past the " + (sys ? "system" : "graphics") + " segment (" + std::to_string(seg.size()) + " bytes)");
     return seg.data() + off;
 }
+
+uint64_t Resource::remaining_checked(uint64_t ptr) const {
+    const uint8_t* p = at(ptr, 0);
+    const Bytes& seg = in_system(ptr) ? system : graphics;
+    return (uint64_t)(seg.data() + seg.size() - p);
+}
+
+std::string hex_ptr(uint64_t ptr) { return hex(ptr); }
 
 Bytes deflate(std::span<const uint8_t> data) {
     mz_stream z{};
@@ -211,14 +227,19 @@ Bytes deflate(std::span<const uint8_t> data) {
 Bytes inflate(std::span<const uint8_t> data, size_t expected_size) {
     mz_stream z{};
     if (mz_inflateInit2(&z, -MZ_DEFAULT_WINDOW_BITS) != MZ_OK) throw Error("inflate: init failed");
-    Bytes out(expected_size);
+    // a deflate stream gives at most 1032 bytes per byte (a 1-bit length 258 and a 1-bit distance code), so the buffer
+    // never needs to be bigger than that: an expected size a malformed header made up costs no more memory than the
+    // stream could fill. One MZ_FINISH call inflates straight into the buffer (miniz's fast path).
+    const size_t cap = std::min<size_t>(expected_size, (size_t)std::min<uint64_t>((uint64_t)data.size() * 1032 + 0x10000, SIZE_MAX));
+    Bytes out(cap);
     z.next_in = data.data();
-    z.avail_in = (unsigned)data.size();
+    z.avail_in = (unsigned)std::min<size_t>(data.size(), UINT32_MAX);
     z.next_out = out.data();
-    z.avail_out = (unsigned)out.size();
+    z.avail_out = (unsigned)std::min<size_t>(out.size(), UINT32_MAX);
     const int rc = mz_inflate(&z, MZ_FINISH);
     out.resize(z.total_out);
     mz_inflateEnd(&z);
+    // MZ_BUF_ERROR: the stream ended early (truncated) or had more than expected_size; either way what it gave is kept
     if (rc != MZ_STREAM_END && rc != MZ_BUF_ERROR && rc != MZ_OK) throw Error("inflate: corrupt deflate stream");
     return out;
 }

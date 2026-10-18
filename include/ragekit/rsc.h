@@ -55,12 +55,22 @@ struct Resource {
     static Resource load(std::span<const uint8_t> file);
     Bytes save(bool compress = true) const;
 
+    /// Bytes at a game pointer, checked: throws when the pointer is in neither segment or `need` bytes run past it.
     const uint8_t* at(uint64_t ptr, size_t need) const;
-    bool in_system(uint64_t ptr) const { return (ptr & 0xF0000000ull) == kSystemBase; }
-    bool in_graphics(uint64_t ptr) const { return (ptr & 0xF0000000ull) == kGraphicsBase; }
+    /// Bytes from a game pointer to the end of its segment; throws for a pointer in neither segment or past its end.
+    uint64_t remaining_checked(uint64_t ptr) const;
+    // A pointer is its segment's base plus an offset under 0x10000000 (the next base); its upper 32 bits are never set.
+    bool in_system(uint64_t ptr) const { return (ptr >> 28) == (kSystemBase >> 28); }
+    bool in_graphics(uint64_t ptr) const { return (ptr >> 28) == (kGraphicsBase >> 28); }
+    /// The most a segment can hold: a longer one would have offsets reaching into the next segment's pointer range.
+    static constexpr uint64_t kMaxSegmentSize = 0x10000000;
 };
 
+/// A pointer as "0x50001230", for messages.
+std::string hex_ptr(uint64_t ptr);
 Bytes deflate(std::span<const uint8_t> data);
+/// Inflates a raw deflate stream of at most `expected_size` bytes (never more than the stream could hold, so a made-up
+/// size costs no memory). A corrupt stream throws; a truncated one gives what it had.
 Bytes inflate(std::span<const uint8_t> data, size_t expected_size);
 Bytes read_file(const std::string& path);
 void write_file(const std::string& path, std::span<const uint8_t> data);
@@ -159,11 +169,16 @@ public:
     int16_t i16(uint64_t p) const { return at<int16_t>(p); }
     float f32(uint64_t p) const { return at<float>(p); }
 
+    /// `count` items at ptr (none for a null pointer); checked against the segment before anything is allocated, so a
+    /// count a malformed file made up costs nothing but the error.
     template <class T> std::vector<T> array(uint64_t ptr, size_t count) const {
         std::vector<T> v;
         if (!ptr || !count) return v;
+        if (count > res_.remaining_checked(ptr) / sizeof(T))
+            throw Error("array of " + std::to_string(count) + " x " + std::to_string(sizeof(T)) + " bytes at " + rsc::hex_ptr(ptr) + " runs past its segment");
+        const uint8_t* p = res_.at(ptr, count * sizeof(T));
         v.resize(count);
-        std::memcpy(v.data(), res_.at(ptr, count * sizeof(T)), count * sizeof(T));
+        std::memcpy(v.data(), p, count * sizeof(T));
         return v;
     }
     Bytes bytes(uint64_t ptr, size_t count) const { return array<uint8_t>(ptr, count); }
