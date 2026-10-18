@@ -585,6 +585,9 @@ Texture read_dds(std::span<const uint8_t> file, const std::string& name) {
     if (rd32(h) != 124) throw Error("DDS header size is not 124");
     uint32_t flags = rd32(h + 4), height = rd32(h + 8), width = rd32(h + 12);
     uint32_t mips = (flags & 0x20000) ? std::max(1u, rd32(h + 24)) : 1;
+    // a texture keeps its size in 16 bits and its level count in a byte
+    if (width > 0xFFFF || height > 0xFFFF) throw Error("DDS: " + std::to_string(width) + " x " + std::to_string(height) + " is larger than a texture can be");
+    if (mips > 0xFF) throw Error("DDS: " + std::to_string(mips) + " mip levels");
     const uint8_t* pf = h + 72;
     uint32_t pfflags = rd32(pf + 4), cc = rd32(pf + 8), bpp = rd32(pf + 12);
     uint32_t rmask = rd32(pf + 16), gmask = rd32(pf + 20), bmask = rd32(pf + 24), amask = rd32(pf + 28);
@@ -711,6 +714,7 @@ Image read_png(std::span<const uint8_t> file) {
         if (pos + len > file.size()) throw Error("PNG chunk truncated");
         const uint8_t* d = &file[pos];
         if (type == "IHDR") {
+            if (len < 13) throw Error("PNG: IHDR chunk shorter than 13 bytes");
             w = be32(d); h = be32(d + 4); depth = d[8]; ctype = d[9]; interlace = d[12];
         } else if (type == "IDAT") idat.insert(idat.end(), d, d + len);
         else if (type == "PLTE") plte.assign(d, d + len);
@@ -722,8 +726,13 @@ Image read_png(std::span<const uint8_t> file) {
     if (interlace) throw Error("PNG: interlaced images are not supported");
     int channels = ctype == 0 ? 1 : ctype == 2 ? 3 : ctype == 3 ? 1 : ctype == 4 ? 2 : ctype == 6 ? 4 : 0;
     if (!channels) throw Error("PNG: unsupported colour type");
+    // the filtered rows the image data must inflate to: never more than the compressed data could give (1032 bytes per
+    // byte of deflate), which refuses a made-up size before anything of it is allocated
+    const uint64_t raw_size = ((uint64_t)w * (uint64_t)channels + 1) * (uint64_t)h;
+    if (w == 0 || h == 0 || w > 0x7FFFFFFF || h > 0x7FFFFFFF || raw_size > (uint64_t)idat.size() * 1032 + 0x10000 || raw_size > UINT32_MAX)
+        throw Error("PNG: " + std::to_string(w) + " x " + std::to_string(h) + " does not fit its image data");
     size_t stride = (size_t)w * channels;
-    Bytes raw((stride + 1) * h);
+    Bytes raw((size_t)raw_size);
     {
         mz_stream zs{};
         if (mz_inflateInit(&zs) != MZ_OK) throw Error("inflateInit failed");
