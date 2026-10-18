@@ -124,6 +124,10 @@ if (RAGEKIT_BUILD_TESTS)
     target_link_libraries(rk_gen_shader_table PRIVATE ragekit)
     add_executable(rk_world_test tests/world_test.cpp)   # world index against the game install: counts, MLO instance rotation, queries
     target_link_libraries(rk_world_test PRIVATE ragekit)
+    add_executable(rk_robust_test tests/robust_test.cpp)   # malformed files throw: no reads past a buffer, no made-up allocations
+    target_link_libraries(rk_robust_test PRIVATE ragekit)
+    add_executable(rk_bench tests/bench.cpp)   # timings of the hot paths over the game install (not a test)
+    target_link_libraries(rk_bench PRIVATE ragekit)
 endif()
 
 if (RAGEKIT_BUILD_EXAMPLES)
