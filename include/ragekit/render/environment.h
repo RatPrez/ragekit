@@ -79,6 +79,8 @@ struct Environment {
     bool volumes = true;                       // the volumes of LightDrawVolume lights
     bool coronas = true;
     bool shadows = true;                       // the shadow maps of CAST_SHADOWS point and spot lights
+    bool sun_shadows = true;                   // the sun's cascades
+    float sun_shadow_distance = 1;             // dir_shadow_distance_multiplier: scales the cascades' reach
     float volume_intensity = 1;                // scales every light volume (their brightness is not yet checked in game)
 
     // ---- postfx: exposure (EV, the multiplier is 2^EV) and the tone map

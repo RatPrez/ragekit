@@ -259,6 +259,7 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     s.mie_intensity = v("sky_sun_mie_intensity_mult", 0.2f);
     s.sun_disc = rgb("sky_sun_disc_col") * v("sky_sun_hdr");
     s.sun_disc_size = v("sky_sun_disc_size", 2);
+    e.sun_shadow_distance = v("dir_shadow_distance_multiplier", 1);
     // the fog
     Fog& f = e.fogs;
     const float fog_hdr = v("fog_hdr", 1);
