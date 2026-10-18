@@ -600,7 +600,7 @@ void EffectInstance::spawn(size_t event, float er, int count) {
         auto r = [&](const Keyframe& kf) { const float v = hash01(p.seed, kf.random_index); return kf.invert_bias ? 1 - v : v; };
         p.life = std::max(0.01f, scalar(r(em.life), em.life, er));
         p.playback = std::max(0.0f, em.playback_rate.at(er).x);
-        p.size_scale = xyz(em.size_scale.at(er)) * 0.01f;   // a percentage; the zoom moves and spreads the effect, its sizes stay (checked by eye: sparks, fire)
+        p.size_scale = xyz(em.size_scale.at(er)) * (0.01f * zoom);   // a percentage, zoomed with the effect (candle 30%, barrel fire 390%)
         p.tint = tint;
         // where it starts and where it heads, in the effect's space, then into the world
         Vec3 local = em.creation ? sample_domain(*em.creation, er, rng_) : Vec3{};
@@ -712,7 +712,7 @@ void EffectInstance::update(float dt_in) {
                 Vec3 a = xyz(range(p, pr, pr.acceleration->min, pr.acceleration->max, t));
                 if (pr.acceleration->space == 1) a = vector(transform_, a);
                 a = a * (em.acceleration_scale.at(er).x / 100);
-                if (pr.acceleration->zoom) a = a * (zoom_ * zoom_scale_);
+                if (pr.acceleration->zoom) a = a * zoom_scale_;   // the caller's / spawner's zoom; the rule's own leaves it (sparks fell at 1/10 g)
                 if (pr.acceleration->gravity) a.z -= 9.8f;
                 p.velocity = p.velocity + a * pdt;
             }
