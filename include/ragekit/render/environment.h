@@ -82,6 +82,7 @@ struct Environment {
     bool volumes = true;                       // the volumes of LightDrawVolume lights
     bool coronas = true;
     bool shadows = true;                       // the shadow maps of CAST_SHADOWS point and spot lights
+    int shadow_lights = 8;                     // at most this many shadowed lights a frame, nearest the camera first (the shaders' 8)
     bool sun_shadows = true;                   // the sun's cascades
     float sun_shadow_distance = 1;             // dir_shadow_distance_multiplier: scales the cascades' reach
     float volume_intensity = 1;                // scales every light volume (their brightness is not yet checked in game)
@@ -122,6 +123,34 @@ struct Environment {
     bool interior = false;                     // the artificial interior ambient (the game's interior stencil)
     bool vertex_ao = true;                     // COLOR0.r / .g as the ambient's occlusion
 
+    // ---- what an interior's room and its modifier switch off
+    bool render_exterior = true;               // the modifier's render_exterior (0 in Mp_apart_mid) and room flag 256: no sky behind the portals
+    bool light_time = true;                    // the lights follow their time flags (false: every light on, whatever the hour)
+
+    /// The constants the CPU sets between the files and the shaders, which are reconstructed (ragekit-viewer docs/lights.md,
+    /// "Reconstructed"): each one here at the value the backend uses by default, so a tool can expose them and the numbers
+    /// tuned against the game come back. A backend draws with tuned() and applies the lights' part per light (tuned_light).
+    struct Tuning {
+        float light_intensity = 1;             // every local light's intensity (the attribute's own, times this)
+        float light_range = 1;                 // every local light's range (on top of light_falloff_mult)
+        float falloff_scale = 1;               // the falloff constant k = falloffExponent * this
+        bool light_colour_srgb = false;        // a light's colour bytes decoded as sRGB instead of taken as linear / 255
+        float ambient_wrap = -1;               // the wrap of the ambient's down / up blend; < 0: the timecycle's light_amb_down_wrap
+        float natural_ambient = 1;             // the natural (sky) ambient
+        float artificial_ambient = 1;          // the artificial ambient (interior and exterior)
+        float directional_ambient = 1;         // the directional ambient (along the sun)
+        float emissive = 1;                    // the emissive term
+        float reflection = 1;                  // the reflection term
+        float exposure_offset = 0;             // EV added after the curve (and to a fixed exposure)
+        float adapt_speed = 1;                 // the adaptation's speed (visualsettings' steps times this)
+
+        bool operator==(const Tuning&) const = default;
+    } tuning;
+
+    /// A copy with the tuning's ambient, wrap and reflection folded into the colours (what a backend draws with); the
+    /// lights', emissive and exposure parts stay in `tuning` for the backend.
+    Environment tuned() const;
+
     /// "day", "overcast", "evening", "night", "interior", "studio"; day for anything else. Values from the game's
     /// EXTRASUNNY / OVERCAST timecycles at 13:00, 19:00 and 23:00; studio has a fixed exposure.
     static Environment preset(std::string_view name);
@@ -135,6 +164,19 @@ struct Environment {
     static Vec3 moon_at(float hour, float moon_roll_deg = -122);
     Vec3 moon_direction{0, 0, -1};             // towards the moon
 };
+
+// ---- the shaders' arithmetic on the CPU: what a backend's picture is checked against (the same formulas as the GLSL)
+
+/// The ambient light a surface receives before its albedo and kD (directional.fxc): ((natural(t) + directional ambient
+/// sat(N.L)) AO_n + artificial(t) AO_a), t = max((N.z + wrap) / (1 + wrap), 0), AO_n = COLOR0.r^2, AO_a = COLOR0.g^2;
+/// the artificial ambient the interior one when `interior`. `e` as the backend draws it (Environment::tuned()).
+Vec3 ambient_light(const Environment& e, Vec3 normal, float colour0_r, float colour0_g, bool interior);
+/// The exposure (EV) postfx shows a frame of mean luminance `lum` at: scale * lum^power + offset + postfx_exposure, plus
+/// the tuning's offset, clamped to the timecycle's min / max; postfx_exposure (+ offset) itself when not automatic.
+float exposure_ev(const Environment& e, float lum);
+/// One adaptation step: from `current` towards `target` by |difference| * Adaptation.step.size.mult EV a second (times
+/// the tuning's speed), clamped to the min / max step sizes, over `dt` seconds, never past the target.
+float adapt_ev(const Environment& e, float current, float target, float dt);
 
 /// What a backend shows instead of the lit colour.
 enum class DebugView : int { Lit = 0, Albedo, Normals, NormalMap, SpecMap, UvCheck, Colour0, Colour1, Alpha, Reflection, Occlusion };

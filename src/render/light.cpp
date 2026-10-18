@@ -144,6 +144,38 @@ LightConstants light_constants(const Light& l, float range_mult, float intensity
     return c;
 }
 
+Light tuned_light(const Light& in, const Environment::Tuning& t) {
+    Light l = in;
+    l.intensity *= t.light_intensity;
+    l.range *= t.light_range;
+    l.falloff_exponent *= t.falloff_scale;
+    if (t.light_colour_srgb) {
+        auto dec = [](float c) { return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f); };
+        l.colour = {dec(l.colour.x), dec(l.colour.y), dec(l.colour.z)};
+    }
+    return l;
+}
+
+float attenuation(const LightConstants& c, Vec3 p) {
+    Vec3 pos{c.position.x, c.position.y, c.position.z};
+    const Vec3 dir{c.direction.x, c.direction.y, c.direction.z};
+    const float ext = c.colour.w;
+    if (ext > 0) {   // a capsule: from the nearest point of its segment
+        const float s = std::clamp(dot(p - pos, dir) / (ext + 1e-4f), 0.0f, 1.0f) * ext;
+        pos = pos + dir * s;
+    }
+    const Vec3 lv = pos - p;
+    const float d2 = dot(lv, lv);
+    float a = std::clamp(1 - d2 * c.position.w, 0.0f, 1.0f);
+    const float k = c.direction.w;
+    const float den = (1 - k) * a + k;
+    a = den != 0 ? a / den : 0;
+    const float inv = 1 / std::sqrt(std::max(d2, 1e-12f));
+    a *= std::clamp(dot(lv * inv, dir * -1.0f) * c.cone.x + c.cone.y, 0.0f, 1.0f);
+    if (dot(p, Vec3{c.cull_plane.x, c.cull_plane.y, c.cull_plane.z}) + c.cull_plane.w < 0) a = 0;
+    return a;
+}
+
 std::vector<Light> lights_of(const std::vector<rk::Light>& attrs, const std::function<Mat4(uint16_t)>& bone_matrix) {
     std::vector<Light> out;
     out.reserve(attrs.size());

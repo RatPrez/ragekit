@@ -159,19 +159,35 @@ std::vector<std::string> Timecycle::modifiers() const {
 
 bool Timecycle::has_modifier(std::string_view name) const { return modifiers_.count(lower(name)) != 0; }
 
+std::vector<std::pair<std::string, std::pair<float, float>>> Timecycle::modifier_values(std::string_view name) const {
+    std::vector<std::pair<std::string, std::pair<float, float>>> out;
+    auto it = modifiers_.find(lower(name));
+    if (it != modifiers_.end())
+        for (auto& [var, ab] : it->second.values) out.emplace_back(var, ab);
+    return out;
+}
+
 Environment Timecycle::environment(std::string_view weather_in, float hour, std::string_view region, std::string_view modifier, float strength) const {
+    std::vector<std::pair<std::string, float>> mods;
+    if (!modifier.empty()) mods.emplace_back(std::string(modifier), strength);
+    return environment(weather_in, hour, region, mods);
+}
+
+Environment Timecycle::environment(std::string_view weather_in, float hour, std::string_view region,
+                                   const std::vector<std::pair<std::string, float>>& modifiers) const {
     std::string weather = upper(weather_in);
     if (!weathers_.count(weather)) weather = weathers_.count("EXTRASUNNY") ? "EXTRASUNNY" : (order_.empty() ? "" : order_[0]);
-    const Modifier* mod = nullptr;
-    if (!modifier.empty()) {
-        auto it = modifiers_.find(lower(modifier));
-        if (it != modifiers_.end()) mod = &it->second;
+    std::vector<std::pair<const Modifier*, float>> mods;
+    for (auto& [name, strength] : modifiers) {
+        if (name.empty() || strength <= 0) continue;
+        auto it = modifiers_.find(lower(name));
+        if (it != modifiers_.end()) mods.emplace_back(&it->second, std::clamp(strength, 0.0f, 1.0f));
     }
     auto v = [&](std::string_view name, float fallback = 0) {
         float x = value(weather, name, hour, region, fallback);
-        if (mod) {
+        for (auto& [mod, strength] : mods) {
             auto m = mod->values.find(name);
-            if (m != mod->values.end()) x += (m->second.first - x) * std::clamp(strength, 0.0f, 1.0f);
+            if (m != mod->values.end()) x += (m->second.first - x) * strength;
         }
         return x;
     };
@@ -182,6 +198,16 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     Environment e;
     e.hour = hour;
     e.sun_direction = Environment::sun_at(hour, sun_roll_, moon_roll_);
+    if (const float o = std::clamp(v("light_direction_override"), 0.0f, 1.0f); o > 0) {
+        // a modifier's own light direction (sun_direction_x/y/z), blended in by light_direction_override (0.7 and 1 in the
+        // files; reconstructed as a blend of the two directions)
+        const Vec3 d{v("sun_direction_x"), v("sun_direction_y"), v("sun_direction_z")};
+        if (d.length() > 1e-4f) {
+            Vec3 s = e.sun_direction * (1 - o) + d * (1 / d.length()) * o;
+            if (s.length() > 1e-4f) e.sun_direction = s * (1 / s.length());
+        }
+    }
+    e.render_exterior = v("render_exterior", 1) > 0.5f;
     e.sun_colour = rgb("light_dir_col") * v("light_dir_mult", 1);
     const float natural = v("natural_ambient_multiplier", 1);
     e.natural_down = rgb("light_natural_amb_down_col") * (v("light_natural_amb_down_intensity") * natural);

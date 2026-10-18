@@ -17,6 +17,7 @@
 #include <vector>
 #include "ragekit/drawable.h"
 #include "ragekit/types.h"
+#include "ragekit/render/environment.h"
 
 namespace rk::render {
 
@@ -103,6 +104,13 @@ struct LightConstants {
 /// `range_mult`: the timecycle's light_falloff_mult; `intensity_mult`: dimming, flashiness. Cone angles clamp to 1..89
 /// degrees (RageAM: the game's limits); scale = 1 / (cos inner - cos outer), offset = -cos outer * scale.
 LightConstants light_constants(const Light& l, float range_mult = 1, float intensity_mult = 1);
+
+/// The light as the tuning has it (Environment::Tuning: intensity, range, falloff constant, sRGB colour); unchanged at the
+/// defaults.
+Light tuned_light(const Light& l, const Environment::Tuning& t);
+/// What the shaders' attenuation gives at a point (world space, as the constants are): the distance falloff, a spot's
+/// cone, the cull plane, without the surface's N.L. The CPU form of the GLSL, for checks.
+float attenuation(const LightConstants& c, Vec3 point);
 
 /// The lights of a drawable or fragment's attributes, each on its bone (`bone_matrix(tag)` gives the bone's matrix).
 std::vector<Light> lights_of(const std::vector<rk::Light>& attrs, const std::function<Mat4(uint16_t)>& bone_matrix);

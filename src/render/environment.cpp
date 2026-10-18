@@ -1,4 +1,5 @@
 #include "ragekit/render/environment.h"
+#include <algorithm>
 #include <cmath>
 
 namespace rk::render {
@@ -99,6 +100,49 @@ Environment Environment::preset(std::string_view name) {
     }
     e.sky = Sky::plain(e.sky_zenith, e.sky_horizon);
     return e;
+}
+
+Environment Environment::tuned() const {
+    Environment e = *this;
+    const Tuning& t = tuning;
+    e.natural_down = natural_down * t.natural_ambient;
+    e.natural_up = natural_up * t.natural_ambient;
+    e.artificial_int_down = artificial_int_down * t.artificial_ambient;
+    e.artificial_int_up = artificial_int_up * t.artificial_ambient;
+    e.artificial_ext_down = artificial_ext_down * t.artificial_ambient;
+    e.artificial_ext_up = artificial_ext_up * t.artificial_ambient;
+    e.directional_ambient = directional_ambient * t.directional_ambient;
+    if (t.ambient_wrap >= 0) e.ambient_wrap = t.ambient_wrap;
+    e.reflection = reflection * t.reflection;
+    return e;
+}
+
+Vec3 ambient_light(const Environment& e, Vec3 n, float r, float g, bool interior) {
+    const float len = n.length();
+    if (len > 0) n = n * (1 / len);
+    const float t = std::max((n.z + e.ambient_wrap) / (1 + e.ambient_wrap), 0.0f);
+    auto mix = [](Vec3 a, Vec3 b, float k) { return a * (1 - k) + b * k; };
+    Vec3 sd = e.sun_direction;
+    const float sl = sd.length();
+    if (sl > 0) sd = sd * (1 / sl);
+    const float ndl = std::clamp(n.x * sd.x + n.y * sd.y + n.z * sd.z, 0.0f, 1.0f);
+    const float ao_n = e.vertex_ao ? r * r : 1, ao_a = e.vertex_ao ? g * g : 1;
+    const Vec3 art_down = interior ? e.artificial_int_down : e.artificial_ext_down;
+    const Vec3 art_up = interior ? e.artificial_int_up : e.artificial_ext_up;
+    return (mix(e.natural_up, e.natural_down, t) + e.directional_ambient * ndl) * ao_n + mix(art_up, art_down, t) * ao_a;
+}
+
+float exposure_ev(const Environment& e, float lum) {
+    if (!e.auto_exposure) return e.exposure + e.tuning.exposure_offset;
+    const float ev = e.exposure_curve[0] * std::pow(std::max(lum, 1e-6f), e.exposure_curve[1]) + e.exposure_curve[2] + e.exposure + e.tuning.exposure_offset;
+    return std::clamp(ev, e.exposure_min, e.exposure_max);
+}
+
+float adapt_ev(const Environment& e, float current, float target, float dt) {
+    const float k = e.tuning.adapt_speed;
+    const float diff = target - current;
+    const float step = std::clamp(std::abs(diff) * e.adapt_mult * k, e.adapt_min * k, e.adapt_max * k) * std::max(dt, 0.0f);
+    return current + std::clamp(diff, -step, step);
 }
 
 void Environment::set_sun(float azimuth_deg, float elevation_deg) {

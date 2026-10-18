@@ -33,9 +33,16 @@ public:
     /// modifier (an interior room's timecycleName, a zone's) applied at a strength 0..1.
     Environment environment(std::string_view weather, float hour, std::string_view region = "GLOBAL",
                             std::string_view modifier = {}, float strength = 1) const;
+    /// The same with several modifiers applied in turn, each at its strength (an interior's room and, near a portal, the
+    /// room behind it; the game's primary and secondary modifiers).
+    Environment environment(std::string_view weather, float hour, std::string_view region,
+                            const std::vector<std::pair<std::string, float>>& modifiers) const;
     /// The modifiers (timecycle_mods_*.xml of the base game, the update and the DLCs), lower-case names.
     std::vector<std::string> modifiers() const;
     bool has_modifier(std::string_view name) const;
+    /// What a modifier sets: each variable with the two numbers of its entry (the first is the value applied), sorted
+    /// by name; empty when the modifier is unknown.
+    std::vector<std::pair<std::string, std::pair<float, float>>> modifier_values(std::string_view name) const;
     /// A value of visualsettings.dat ("Tonemapping.bright.filmic.A"), `fallback` if absent.
     float setting(std::string_view key, float fallback = 0) const;
 
