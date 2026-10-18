@@ -3,6 +3,8 @@
 //   - random block sets: the root at system offset 0, every block 16-aligned inside one page, no two overlapping, pages of at
 //     least 8 KB, no more than 128 pages, the page map sized to the pages with their counts, contents and pointers intact
 //   - how much of the pages the blocks fill
+//   - inflate: the table-driven decoder on streams of every block type, and rsc::inflate against miniz on whole, damaged,
+//     cut and capped streams
 // Exit 0 = every check passed.
 #include <algorithm>
 #include <cstdio>
@@ -10,6 +12,8 @@
 #include <string>
 #include <vector>
 #include "ragekit/rsc.h"
+#include "inflate_fast.h"
+#include "miniz.h"
 
 using namespace rk;
 
@@ -45,6 +49,81 @@ static uint64_t block_size(Rng& r) {
 }
 
 struct Case { std::vector<uint64_t> sys, gfx; };
+
+// miniz on its own, as rsc::inflate used it: the reference for what a stream gives (empty + threw for a corrupt one)
+static Bytes miniz_inflate(const Bytes& data, size_t cap, bool& threw) {
+    mz_stream z{};
+    mz_inflateInit2(&z, -MZ_DEFAULT_WINDOW_BITS);
+    Bytes out(cap);
+    z.next_in = data.data(); z.avail_in = (unsigned)data.size();
+    z.next_out = out.data(); z.avail_out = (unsigned)out.size();
+    const int rc = mz_inflate(&z, MZ_FINISH);
+    out.resize(z.total_out);
+    mz_inflateEnd(&z);
+    threw = rc != MZ_STREAM_END && rc != MZ_BUF_ERROR && rc != MZ_OK;
+    return threw ? Bytes{} : out;
+}
+
+static Bytes deflate_with(const Bytes& in, int level, int strategy) {
+    mz_stream z{};
+    mz_deflateInit2(&z, level, MZ_DEFLATED, -MZ_DEFAULT_WINDOW_BITS, 9, strategy);
+    Bytes out(mz_deflateBound(&z, (mz_ulong)in.size()) + 64);
+    z.next_in = in.data(); z.avail_in = (unsigned)in.size();
+    z.next_out = out.data(); z.avail_out = (unsigned)out.size();
+    mz_deflate(&z, MZ_FINISH);
+    out.resize(z.total_out);
+    mz_deflateEnd(&z);
+    return out;
+}
+
+// rsc::inflate (the table-driven decoder, miniz for what it refuses) against miniz alone: streams of every block type
+// (stored, fixed, dynamic) over data with every kind of match (runs, short and long distances, none), whole, with
+// bytes flipped and cut short, into buffers that hold all of it or less.
+static void inflate_checks(Rng& r) {
+    int fast_bad = 0, same_bad = 0, total = 0, corrupt = 0;
+    std::string first;
+    for (int t = 0; t < 400; t++) {
+        const size_t n = t < 10 ? (size_t)t : 1 + r.below(t % 7 == 0 ? 2000000 : 70000);
+        Bytes in(n);
+        const uint32_t kind = r.below(5);
+        for (size_t i = 0; i < n; i++) {
+            switch (kind) {
+                case 0: in[i] = (uint8_t)r.next(); break;                                         // incompressible
+                case 1: in[i] = (uint8_t)(r.below(8) ? (i ? in[i - 1] : 0) : r.next()); break;    // runs (distance 1)
+                case 2: in[i] = (uint8_t)(i >= 3 && r.below(6) ? in[i - 3] : r.below(16)); break; // distance 3
+                case 3: in[i] = (uint8_t)(i >= 9000 && r.below(3) ? in[i - 9000 + r.below(2)] : r.below(64)); break;
+                default: in[i] = (uint8_t)("the quick brown fox "[i % 20] + (r.below(30) ? 0 : 1)); break;
+            }
+        }
+        const int level = (int)r.below(11), strategy = r.below(4) == 0 ? MZ_FIXED : MZ_DEFAULT_STRATEGY;
+        Bytes z = level == 9 && r.below(2) ? rsc::deflate(in) : deflate_with(in, level, strategy);
+        // whole streams: the fast decoder takes them and gives the input back
+        total++;
+        size_t got = 0;
+        Bytes buf(n + 1);
+        if (!detail::inflate_fast(z.data(), z.size(), buf.data(), buf.size(), got) || got != n || !std::equal(in.begin(), in.end(), buf.begin())) {
+            if (!fast_bad++) first = "fast decoder, case " + std::to_string(t) + " (" + std::to_string(n) + " bytes, level " + std::to_string(level) + ")";
+        }
+        // and the same streams damaged or cut, or into a buffer too small: rsc::inflate gives what miniz gives
+        for (int v = 0; v < 4; v++) {
+            Bytes zz = z;
+            size_t cap = n;
+            if (v == 1 && !zz.empty()) for (int k = 0; k < 3; k++) zz[r.below((uint32_t)zz.size())] ^= (uint8_t)(1 + r.below(255));
+            if (v == 2) zz.resize(zz.size() * r.below(100) / 100);
+            if (v == 3) cap = n / 2;
+            bool threw_ref = false, threw = false;
+            const Bytes ref = miniz_inflate(zz, cap, threw_ref);
+            Bytes got2;
+            try { got2 = rsc::inflate(zz, cap); } catch (const Error&) { threw = true; }
+            corrupt += threw_ref;
+            if (threw != threw_ref || (!threw && got2 != ref)) {
+                if (!same_bad++ && first.empty()) first = "case " + std::to_string(t) + " variant " + std::to_string(v);
+            }
+        }
+    }
+    check(fast_bad == 0, "inflate: " + std::to_string(total) + " whole streams (stored, fixed, dynamic) decoded by the fast decoder" + (first.empty() ? "" : " (first bad: " + first + ")"));
+    check(same_bad == 0, "inflate: " + std::to_string(total * 4) + " whole, damaged, cut and capped streams give what miniz gives (" + std::to_string(corrupt) + " corrupt)");
+}
 
 static bool run(const Case& cs, uint64_t seed, bool compress, double& fill, std::string& why) {
     Rng r{seed};
@@ -214,6 +293,8 @@ int main() {
     }
     check(bad == 0, std::to_string(cases) + " random block sets lay out validly" + (bad ? " (" + std::to_string(bad) + " bad, first " + first + ")" : ""));
     std::printf("blocks fill %.1f%% of the pages on average, %.1f%% at worst\n", 100 * fill_sum / cases, 100 * fill_min);
+
+    inflate_checks(r);
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

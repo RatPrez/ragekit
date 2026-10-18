@@ -27,6 +27,7 @@ add_library(ragekit STATIC
     src/game.cpp
     src/hash.cpp
     src/rsc.cpp
+    src/inflate_fast.cpp
     src/texture.cpp
     src/image.cpp
     src/drawable.cpp
@@ -97,6 +98,8 @@ if (RAGEKIT_BUILD_TESTS)
     enable_testing()
     add_executable(rk_rsc_test tests/rsc_test.cpp)   # RSC7 page flags and the page layout Builder makes
     target_link_libraries(rk_rsc_test PRIVATE ragekit)
+    target_include_directories(rk_rsc_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniz)   # inflate_fast.h; miniz as the reference
+    target_compile_definitions(rk_rsc_test PRIVATE MINIZ_NO_ARCHIVE_APIS MINIZ_NO_STDIO MINIZ_NO_ZLIB_COMPAT_NAMES)
     add_executable(rk_roundtrip tests/roundtrip.cpp)
     target_link_libraries(rk_roundtrip PRIVATE ragekit)
     target_include_directories(rk_roundtrip PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)   # cloth_io.h: fragment cloth into a test resource

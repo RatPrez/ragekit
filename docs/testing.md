@@ -23,7 +23,7 @@ in about four and a half minutes, all of which read back field for field.
 
 | program | checks |
 |---|---|
-| `rk_rsc_test` | page flags, and the page layout `Builder` makes on random block sets: the root at offset 0, every block inside one page, no overlaps, no page under 8 KB, at most 128 pages, the page map, contents and pointers |
+| `rk_rsc_test` | page flags, and the page layout `Builder` makes on random block sets: the root at offset 0, every block inside one page, no overlaps, no page under 8 KB, at most 128 pages, the page map, contents and pointers; the inflate decoder on streams of every block type, and `rsc::inflate` against miniz on whole, damaged, cut and capped streams |
 | `rk_texenc_test` | block compression quality (RMS limits on synthetic images) |
 | `rk_rpf_test` | cipher test vectors and the archive writer; with archive arguments, every ytd/ydr/ydd/ybn/yft/ytyp/ymap inside them (nested archives too) extracted and parsed |
 | `rk_occluder_test` | box occluders, occlude models, entities removed from a ymap; every occlusion ymap of the game round-trips |

@@ -19,6 +19,11 @@ in GTA V files is texture data. Pointers inside the data are `0x50000000 + offse
 `0x60000000 + offset` into the graphics segment. The structure at system offset 0 is the root; its second pointer (at
 root + 8) points at the page map.
 
+`Resource::load` refuses page flags over 256 MB a segment (the pointer range of one) and never allocates more than the
+deflate stream could hold (1032 bytes per byte), so a header with made-up sizes costs nothing; a whole stream is
+inflated by a table-driven decoder (about 1.7 times miniz's speed), anything else by miniz. Every read through
+`Resource::at` and `Reader` is checked against its segment and throws `rk::Error` past it.
+
 ```cpp
 rsc::Resource r = rsc::Resource::load(file);     // both segments, inflated
 const uint8_t* p = r.at(ptr, 16);                 // a game pointer to bytes, bounds checked

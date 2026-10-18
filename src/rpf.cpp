@@ -11,6 +11,7 @@
 #include "ragekit/error.h"
 #include "ragekit/hash.h"
 #include "ragekit/rsc.h"
+#include "inflate_fast.h"
 #include "miniz.h"
 #include "rpf_crypto.h"
 
@@ -293,10 +294,16 @@ struct Source {
 };
 
 Bytes inflate_auto(const uint8_t* data, size_t len, size_t hint) {
-    mz_stream zs{};
-    if (mz_inflateInit2(&zs, -MZ_DEFAULT_WINDOW_BITS) != MZ_OK) throw Error("inflateInit2 failed");
     // the hint is the entry's own size word: never more than the stream could give (1032 bytes per byte of deflate)
     Bytes out(std::min<size_t>(std::max<size_t>(hint, 64), (size_t)std::min<uint64_t>((uint64_t)len * 1032 + 0x10000, SIZE_MAX)));
+    // a whole stream that fits the hint with the table-driven decoder; anything else (larger, truncated, corrupt) with miniz
+    size_t n = 0;
+    if (rk::detail::inflate_fast(data, len, out.data(), out.size(), n)) {
+        out.resize(n);
+        return out;
+    }
+    mz_stream zs{};
+    if (mz_inflateInit2(&zs, -MZ_DEFAULT_WINDOW_BITS) != MZ_OK) throw Error("inflateInit2 failed");
     zs.next_in = data;
     zs.avail_in = (unsigned)len;
     for (;;) {
