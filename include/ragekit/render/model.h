@@ -52,6 +52,10 @@ struct Mesh {
     /// Not drawn in the colour pass: a proxy model (render mask bit 0 clear, as CodeWalker reads it) or a shadow-only
     /// material (FeatShadowOnly). Kept for shadow passes.
     bool shadow_only = false;
+    /// The model's render mask: bit 0 the colour pass, bit 1 the shadow passes (a tree's model 0xFD draws without a
+    /// shadow, its proxy 0xE2 casts one unseen; most are 0xFF).
+    uint8_t render_mask = 0xFF;
+    bool casts_shadow() const { return (render_mask & 2) != 0; }
 };
 
 /// How a texture's texels are stored, in terms any graphics API has.

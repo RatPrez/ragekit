@@ -99,6 +99,7 @@ struct Builder {
                 m.material = base + g.shader_index;
                 m.transform = transform;
                 m.shadow_only = proxy || out.materials[m.material].has(FeatShadowOnly);
+                m.render_mask = model.render_mask;
                 m.bounds_min = {g.bounds.min.x, g.bounds.min.y, g.bounds.min.z};
                 m.bounds_max = {g.bounds.max.x, g.bounds.max.y, g.bounds.max.z};
                 for (int i = 0; i < 16; i++) {
