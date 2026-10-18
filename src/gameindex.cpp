@@ -636,9 +636,21 @@ struct GameIndex::Impl {
         std::ifstream f(path, std::ios::binary | std::ios::ate);
         if (!f) return false;
         std::streamsize n = f.tellg();
+        if (n < 0) return false;
         f.seekg(0);
         Bytes buf((size_t)n);
         if (!f.read((char*)buf.data(), n)) return false;
+        // read into locals and take them only once everything checks: a cache cut short or corrupted must leave the
+        // index empty, or the scan that follows would add to what it left behind
+        GameIndexInfo in;
+        std::vector<std::string> xs;
+        std::vector<IndexedArchive> as;
+        Pool ds, np;
+        std::vector<LoadRank> rs;
+        std::vector<IndexedFile> fs;
+        std::vector<IndexedArchetype> ar;
+        std::vector<uint32_t> nh;
+        std::vector<ParentRec> ps;
         try {
             CacheReader r{buf.data(), buf.data() + buf.size()};
             r.need(4);
@@ -646,29 +658,59 @@ struct GameIndex::Impl {
             r.p += 4;
             if (r.pod<uint32_t>() != GameIndex::kFormat) return false;
             if (r.pod<uint64_t>() != key) return false;
-            info.scan_seconds = r.pod<double>();
-            info.game_dir = r.str();
-            info.exe_version = r.str();
-            exts.resize(r.pod<uint32_t>());
-            for (auto& e : exts) e = r.str();
-            archives.resize(r.pod<uint32_t>());
-            for (auto& a : archives) { a.path = r.str(); a.parent = r.pod<int32_t>(); a.parent_entry = r.pod<uint32_t>(); a.file_count = r.pod<uint32_t>(); }
-            dirs = r.pool();
-            ranks.resize(r.pod<uint32_t>());
-            for (auto& k : ranks) { k.tier = r.pod<int32_t>(); k.order = r.pod<int32_t>(); k.index = r.pod<int32_t>(); k.patch = r.pod<int32_t>(); k.dlc = r.str(); }
-            files = r.vec<IndexedFile>();
-            archs = r.vec<IndexedArchetype>();
-            name_hashes = r.vec<uint32_t>();
-            name_pool = r.pool();
-            parents = r.vec<ParentRec>();
+            in.scan_seconds = r.pod<double>();
+            in.game_dir = r.str();
+            in.exe_version = r.str();
+            const uint32_t ne = r.pod<uint32_t>();
+            r.need((size_t)ne * 4);   // every string costs at least its length word
+            xs.resize(ne);
+            for (auto& e : xs) e = r.str();
+            const uint32_t na = r.pod<uint32_t>();
+            r.need((size_t)na * 16);
+            as.resize(na);
+            for (auto& a : as) { a.path = r.str(); a.parent = r.pod<int32_t>(); a.parent_entry = r.pod<uint32_t>(); a.file_count = r.pod<uint32_t>(); }
+            ds = r.pool();
+            const uint32_t nr = r.pod<uint32_t>();
+            r.need((size_t)nr * 20);
+            rs.resize(nr);
+            for (auto& k : rs) { k.tier = r.pod<int32_t>(); k.order = r.pod<int32_t>(); k.index = r.pod<int32_t>(); k.patch = r.pod<int32_t>(); k.dlc = r.str(); }
+            fs = r.vec<IndexedFile>();
+            ar = r.vec<IndexedArchetype>();
+            nh = r.vec<uint32_t>();
+            np = r.pool();
+            ps = r.vec<ParentRec>();
             uint32_t nw = r.pod<uint32_t>();
-            info.warnings.clear();
-            for (uint32_t i = 0; i < nw; i++) info.warnings.push_back(r.str());
-            if (name_pool.size() != name_hashes.size()) return false;
-            info.cache_bytes = (uint64_t)n;
+            r.need((size_t)nw * 4);
+            for (uint32_t i = 0; i < nw; i++) in.warnings.push_back(r.str());
+            in.cache_bytes = (uint64_t)n;
         } catch (const std::exception&) {
             return false;
         }
+        // the cross references: every index a row carries must land in its table
+        if (np.size() != nh.size()) return false;
+        for (size_t i = 1; i < ds.off.size(); i++) if (ds.off[i] < ds.off[i - 1]) return false;
+        for (size_t i = 1; i < np.off.size(); i++) if (np.off[i] < np.off[i - 1]) return false;
+        for (size_t i = 0; i < as.size(); i++)
+            if (as[i].parent >= 0 && ((size_t)as[i].parent >= i)) return false;   // a parent archive is listed before its children
+        for (const IndexedFile& f2 : fs)
+            if (f2.archive >= as.size() || f2.dir >= ds.size() || f2.ext >= xs.size() || f2.rank >= rs.size() || f2.name_id >= np.size()) return false;
+        for (const IndexedArchetype& a : ar) if (a.ytyp_file >= fs.size() || a.rank >= rs.size()) return false;
+        if (!std::is_sorted(nh.begin(), nh.end())) return false;
+        if (!std::is_sorted(ps.begin(), ps.end(), [](const ParentRec& a, const ParentRec& b) { return a.child < b.child; })) return false;
+        info.scan_seconds = in.scan_seconds;
+        info.game_dir = std::move(in.game_dir);
+        info.exe_version = std::move(in.exe_version);
+        info.warnings = std::move(in.warnings);
+        info.cache_bytes = in.cache_bytes;
+        exts = std::move(xs);
+        archives = std::move(as);
+        dirs = std::move(ds);
+        ranks = std::move(rs);
+        files = std::move(fs);
+        archs = std::move(ar);
+        name_hashes = std::move(nh);
+        name_pool = std::move(np);
+        parents = std::move(ps);
         finish_load();
         return true;
     }
