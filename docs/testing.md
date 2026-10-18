@@ -35,6 +35,7 @@ in about four and a half minutes, all of which read back field for field.
 | `rk_xml_test` | the CodeWalker XML writers (`selftest`, and the steps of `tests/cmp_xml.sh`) |
 | `rk_build_mlo` | builds a small interior with the typed API, for the oracle |
 | `rk_ymf_full` | writes a manifest that uses every array, for CodeWalker to read back (`oracle ymf --xml`) |
+| `rk_gltf_test` | `write_glb` read back from the .glb: the winding against the normals, the alpha mode of each draw bucket |
 | `rk_robust_test` | malformed files throw `rk::Error`: sizes and counts past the buffer, made-up sizes that would be allocated (checked against the peak working set), structures that nest without end, a corrupt game index cache; no game files needed (`rk_robust_test [group...]` runs some) |
 | `rk_bench` | not a test: timings over the game install (`GameIndex::open` from the cache and with `--scan` a full scan, the biggest ytd / ydr / ybn read, decoded and written, `--rpf` every archive opened and its entries checked, `--encode` BC1 / BC3 encoding and its PSNR) |
 

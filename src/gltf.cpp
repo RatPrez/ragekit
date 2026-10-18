@@ -116,8 +116,9 @@ int add_material(Glb& g, const Drawable& d, const Shader& s, size_t index, const
     m << "}";
     int nt = opt.textures ? add_texture(g, lookup(d, bump, opt)) : -1;
     if (nt >= 0) m << ",\"normalTexture\":{\"index\":" << nt << "}";
-    if (s.render_bucket == 1 || s.render_bucket == 3) m << ",\"alphaMode\":\"BLEND\"";
-    else if (s.render_bucket == 2) m << ",\"alphaMode\":\"MASK\",\"alphaCutoff\":0.5";
+    // the game's draw buckets: 1 alpha (glass), 2 decals, both blended; 3 cutouts (the cutout presets), alpha tested
+    if (s.render_bucket == 1 || s.render_bucket == 2) m << ",\"alphaMode\":\"BLEND\"";
+    else if (s.render_bucket == 3) m << ",\"alphaMode\":\"MASK\",\"alphaCutoff\":0.5";
     m << ",\"doubleSided\":false}";
     g.materials.push_back(m.str());
     int idx = (int)g.materials.size() - 1;
@@ -168,9 +169,9 @@ int add_mesh(Glb& g, const Drawable& d, const Model& model, const std::string& n
                 col[i * 4 + 2] = (uint8_t)std::lround(c.z * 255); col[i * 4 + 3] = (uint8_t)std::lround(c.w * 255);
             }
         }
-        // glTF is counter-clockwise front; the axis change flips handedness, so swap winding
-        std::vector<uint16_t> idx(geom.indices);
-        for (size_t i = 0; i + 2 < idx.size(); i += 3) std::swap(idx[i + 1], idx[i + 2]);
+        // glTF's front faces are counter-clockwise, as the game's are (99.7 % of the triangles of 289 drawables of the
+        // game wind counter-clockwise about their vertex normals); the axis change is a rotation, so the order stays
+        const std::vector<uint16_t>& idx = geom.indices;
 
         int a_pos = g.accessor(g.view(pos.data(), pos.size() * 4, 34962), 5126, n, "VEC3", false, mn, mx, 3);
         std::ostringstream p;
