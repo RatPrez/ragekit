@@ -295,7 +295,8 @@ struct Source {
 Bytes inflate_auto(const uint8_t* data, size_t len, size_t hint) {
     mz_stream zs{};
     if (mz_inflateInit2(&zs, -MZ_DEFAULT_WINDOW_BITS) != MZ_OK) throw Error("inflateInit2 failed");
-    Bytes out(std::max<size_t>(hint, 64));
+    // the hint is the entry's own size word: never more than the stream could give (1032 bytes per byte of deflate)
+    Bytes out(std::min<size_t>(std::max<size_t>(hint, 64), (size_t)std::min<uint64_t>((uint64_t)len * 1032 + 0x10000, SIZE_MAX)));
     zs.next_in = data;
     zs.avail_in = (unsigned)len;
     for (;;) {
@@ -343,6 +344,13 @@ struct Rpf::Impl {
             const RpfKeys& k = need_keys(true);
             rpfcrypto::ng_decrypt(b.data(), b.size(), name, length, k.ng_keys.data(), k.ng_tables.data(), k.hash_lut.data());
         }
+    }
+    /// Where an entry's `len` bytes start in the source; throws (before anything of that size is allocated) when they run
+    /// past this archive, whose extent inside a parent archive is all the entry may use.
+    uint64_t entry_at(const RpfEntry& e, uint64_t len) const {
+        const uint64_t off = (uint64_t)e.offset_blocks * 512;
+        if (off > size || len > size - off) throw Error("'" + e.path + "' runs past the end of its archive");
+        return start + off;
     }
     void decrypt_file(Bytes& b, const std::string& entry_name, uint32_t length) const {
         if (aes) {
@@ -482,7 +490,9 @@ std::vector<int> Rpf::children(int dir) const {
     std::vector<int> out;
     const RpfEntry& e = d_->entries.at((size_t)dir);
     if (!e.is_directory()) return out;
-    for (uint32_t i = 0; i < e.child_count; i++) out.push_back((int)(e.first_child + i));
+    // a directory the root never reaches may list entries past the table (read_archive checks only the reachable ones)
+    const uint64_t end = std::min<uint64_t>((uint64_t)e.first_child + e.child_count, d_->entries.size());
+    for (uint64_t i = e.first_child; i < end; i++) out.push_back((int)i);
     return out;
 }
 
@@ -498,8 +508,9 @@ Bytes Rpf::extract_raw(int entry) const {
     const RpfEntry& e = d_->entries.at((size_t)entry);
     if (e.is_directory()) throw Error("'" + e.path + "' is a directory");
     uint64_t len = e.is_binary() ? (e.stored_size ? e.stored_size : e.uncompressed_size) : e.stored_size;
+    const uint64_t at = d_->entry_at(e, len);
     Bytes b((size_t)len);
-    if (len) d_->src->read(d_->start + (uint64_t)e.offset_blocks * 512, (size_t)len, b.data());
+    if (len) d_->src->read(at, (size_t)len, b.data());
     return b;
 }
 
@@ -511,26 +522,30 @@ Bytes Rpf::extract(const RpfEntry& e) const {
         if (e.is_binary()) {
             uint64_t len = e.stored_size ? e.stored_size : e.uncompressed_size;
             if (len == 0) return {};
+            const uint64_t at = d_->entry_at(e, len);
             Bytes b((size_t)len);
-            d_->src->read(d_->start + (uint64_t)e.offset_blocks * 512, b.size(), b.data());
+            d_->src->read(at, b.size(), b.data());
             if (e.encrypted) d_->decrypt_file(b, e.name, e.uncompressed_size);
             if (e.stored_size > 0) return inflate_auto(b.data(), b.size(), e.uncompressed_size);
             return b;
         }
-        // resource: 16 byte header on disk, then the (maybe encrypted) deflate stream
+        // resource: 16 byte header on disk, then the (maybe encrypted) deflate stream; the stream is read in place behind
+        // the header the entry's own flags make, and decrypted there
         if (e.stored_size == 0) return {};
         if (e.stored_size < 16) throw Error("resource smaller than its header");
-        Bytes b(e.stored_size);
-        d_->src->read(d_->start + (uint64_t)e.offset_blocks * 512, b.size(), b.data());
-        Bytes body(b.begin() + 16, b.end());
-        if (e.encrypted) d_->decrypt_file(body, e.name, e.stored_size);
-        Bytes out(16 + body.size());
+        const uint64_t at = d_->entry_at(e, e.stored_size);
+        Bytes out(e.stored_size);
+        d_->src->read(at + 16, out.size() - 16, out.data() + 16);
+        if (e.encrypted) {
+            Bytes body(out.begin() + 16, out.end());
+            d_->decrypt_file(body, e.name, e.stored_size);
+            std::memcpy(out.data() + 16, body.data(), body.size());
+        }
         uint32_t magic = rsc::kMagic, version = e.resource_version();
         std::memcpy(out.data(), &magic, 4);
         std::memcpy(out.data() + 4, &version, 4);
         std::memcpy(out.data() + 8, &e.system_flags, 4);
         std::memcpy(out.data() + 12, &e.graphics_flags, 4);
-        std::memcpy(out.data() + 16, body.data(), body.size());
         return out;
     } catch (const Error& err) {
         throw Error(d_->name + ":" + e.path + ": " + err.what());
@@ -542,8 +557,9 @@ Bytes Rpf::extract_stored(int entry) const {
     if (!e.is_binary()) return extract(entry);
     uint64_t len = e.stored_size ? e.stored_size : e.uncompressed_size;
     if (len == 0) return {};
+    const uint64_t at = d_->entry_at(e, len);
     Bytes b((size_t)len);
-    d_->src->read(d_->start + (uint64_t)e.offset_blocks * 512, b.size(), b.data());
+    d_->src->read(at, b.size(), b.data());
     if (e.encrypted) d_->decrypt_file(b, e.name, e.uncompressed_size);
     return b;
 }
