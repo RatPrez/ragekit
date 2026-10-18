@@ -109,6 +109,13 @@ PsoSchema decode_schema(const Bytes& payload) {
     if (count > 100000) fail("pso: schema with %llu elements", count);
     std::vector<std::pair<uint32_t, uint32_t>> index;
     for (uint32_t i = 0; i < count; i++) { uint32_t n = idx.u32(); uint32_t o = idx.u32(); index.push_back({n, o}); }
+    // the elements are one after the other in the payload: an index whose entries all name one element would decode it
+    // count times (a 65535-entry structure, 100000 times), so the entries' bytes are held to the payload's
+    uint64_t entry_budget = payload.size();
+    auto spend = [&](uint64_t n) {
+        if (n > entry_budget) fail("pso: the schema's elements name more bytes than it holds (%llu)", (unsigned long long)payload.size());
+        entry_budget -= n;
+    };
     for (auto& ix : index) {
         if (ix.second < 8) fail("pso: schema element offset %llu inside the header", ix.second);
         In in(payload.data(), payload.size());
@@ -121,6 +128,7 @@ PsoSchema decode_schema(const Bytes& payload) {
             e.st.kind = kind;
             e.st.unknown = uint8_t(x >> 16);
             uint16_t cnt = uint16_t(x);
+            spend(12 + 12ull * cnt);
             e.st.size = (int32_t)in.u32();
             e.st.unknown_c = in.u32();
             for (uint16_t k = 0; k < cnt; k++) {
@@ -132,6 +140,7 @@ PsoSchema decode_schema(const Bytes& payload) {
             e.is_enum = true;
             e.en.kind = kind;
             uint32_t cnt = x & 0xFFFFFF;
+            spend(4 + 8ull * cnt);
             for (uint32_t k = 0; k < cnt; k++) { PsoEnumEntry en; en.name = in.u32(); en.value = (int32_t)in.u32(); e.en.entries.push_back(en); }
         } else fail("pso: unknown schema element kind %llu", kind);
         s.elements.push_back(std::move(e));

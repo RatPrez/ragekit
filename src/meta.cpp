@@ -89,7 +89,7 @@ const MetaBlock& Meta::block(uint32_t id) const {
 const uint8_t* Meta::at(uint64_t pointer, size_t need) const {
     const MetaBlock& b = block(meta_block_id(pointer));
     uint64_t off = meta_offset(pointer);
-    if (off + need > b.data.size()) fail("meta pointer offset %llu runs past its block (%llu bytes)", off + need, b.data.size());
+    if (off > b.data.size() || need > b.data.size() - off) fail("meta pointer offset %llu + %llu runs past its block", off, need);
     return b.data.data() + off;
 }
 std::span<const uint8_t> Meta::array_bytes(const MetaArray& a, size_t stride) const {
@@ -136,6 +136,15 @@ Meta read_meta(std::span<const uint8_t> file) {
 
     m.name = r.str(nmp);
 
+    // the tables and the data blocks each point into the system segment; a file whose tables all name the same bytes
+    // would otherwise cost their count times the segment (the entries are copied), so their sum is held to what the
+    // segment can hold at the structures' sizes
+    const uint64_t segment = res.system.size() + res.graphics.size();
+    uint64_t entry_budget = segment / 8, block_budget = segment;
+    auto spend = [](uint64_t& budget, uint64_t n, const char* what) {
+        if (n > budget) throw Error(std::string("meta: the ") + what + " tables name more bytes than the file holds");
+        budget -= n;
+    };
     for (uint16_t i = 0; i < sic; i++) {
         auto s = r.cursor(sip + i * 32ull);
         MetaStruct ms;
@@ -144,6 +153,8 @@ Meta read_meta(std::span<const uint8_t> file) {
         ms.size = (int32_t)s.u32();
         ms.unknown1C = s.u16();
         uint16_t ec = s.u16();
+        if (ms.size < 0) fail("meta: structure %llX has a negative size", ms.name);
+        spend(entry_budget, ec, "structure");
         for (uint16_t k = 0; k < ec; k++) {
             auto e = r.cursor(ep + k * 16ull);
             MetaEntry me;
@@ -160,6 +171,7 @@ Meta read_meta(std::span<const uint8_t> file) {
         uint64_t ep = s.u64();
         uint32_t ec = s.u32();
         me.unknown14 = (int32_t)s.u32();
+        spend(entry_budget, ec, "enum");
         for (uint32_t k = 0; k < ec; k++) {
             auto e = r.cursor(ep + k * 8ull);
             MetaEnumEntry en;
@@ -174,6 +186,7 @@ Meta read_meta(std::span<const uint8_t> file) {
         b.type = s.u32();
         uint32_t len = s.u32();
         uint64_t dp = s.u64();
+        spend(block_budget, len, "data block");
         if (len) b.data = r.bytes(dp, len);
         m.blocks.push_back(std::move(b));
     }
@@ -411,6 +424,22 @@ const MetaStruct* describe(const Meta& m, uint32_t type) {
     return known_struct(type);
 }
 
+// The game's deepest nesting is a few structures (a ytyp's MLO rooms, an entity's extensions); a structure table that
+// nests a structure in itself, or a pointer that points back, would recurse without end, and a tree of pointer arrays
+// multiplies its copies: the depth and the number of objects one detach may make are both bounded.
+constexpr int kMaxDetachDepth = 64;
+constexpr size_t kMaxDetachObjects = 1u << 22;
+thread_local int t_detach_depth = 0;
+thread_local size_t t_detach_objects = 0;
+struct DetachGuard {
+    DetachGuard() {
+        if (t_detach_depth == 0) t_detach_objects = 0;
+        if (++t_detach_depth > kMaxDetachDepth) { t_detach_depth--; throw Error("meta: structures nested more than " + std::to_string(kMaxDetachDepth) + " deep"); }
+        if (++t_detach_objects > kMaxDetachObjects) { t_detach_depth--; throw Error("meta: more than " + std::to_string(kMaxDetachObjects) + " objects under one structure"); }
+    }
+    ~DetachGuard() { t_detach_depth--; }
+};
+
 struct Detacher {
     const Meta& m;
     MetaObject& obj;
@@ -421,11 +450,18 @@ struct Detacher {
 
     void walk(const MetaStruct& info, size_t base) {
         using namespace metatype;
+        DetachGuard guard;
         for (auto& e : info.entries) {
             if (e.name == kArrayInfo) continue;
             size_t at = base + (size_t)e.offset;
+            // the entry's offset is the file's own word (its structure table): the field must lie inside the object
+            auto field = [&](size_t n) {
+                if (e.offset < 0 || at > obj.data.size() || n > obj.data.size() - at)
+                    throw Error("meta: entry " + hash_name(e.name) + " of " + hash_name(info.name) + " lies outside its structure");
+            };
             switch (e.type) {
             case CharPointer: {
+                field(16);
                 MetaArray a = Meta::read_array(obj.data.data() + at);
                 if (!a.pointer) break;
                 MetaLink l; l.kind = MetaLink::Kind::String; l.offset = (uint32_t)at;
@@ -437,6 +473,7 @@ struct Detacher {
                 break;
             }
             case DataBlockPointer: {
+                field(8);
                 uint64_t ptr; std::memcpy(&ptr, obj.data.data() + at, 8);
                 if (!ptr) break;
                 const MetaBlock& b = m.block(meta_block_id(ptr));
@@ -449,6 +486,7 @@ struct Detacher {
                 break;
             }
             case StructurePointer: {
+                field(8);
                 uint64_t ptr; std::memcpy(&ptr, obj.data.data() + at, 8);
                 if (!ptr) break;
                 MetaLink l; l.kind = MetaLink::Kind::Pointer; l.offset = (uint32_t)at;
@@ -460,11 +498,13 @@ struct Detacher {
             case Structure: {
                 const MetaStruct* sub = describe(m, e.ref_key);
                 if (!sub) throw Error("meta: no description for nested structure " + hash_name(e.ref_key));
-                if (at + (size_t)sub->size > obj.data.size()) throw Error("meta: nested structure overruns its parent");
+                if (sub->size < 0) throw Error("meta: nested structure " + hash_name(e.ref_key) + " has a negative size");
+                field((size_t)sub->size);
                 walk(*sub, at);
                 break;
             }
             case Array: {
+                field(16);
                 MetaArray a = Meta::read_array(obj.data.data() + at);
                 if (e.ref_index < 0 || (size_t)e.ref_index >= info.entries.size()) throw Error("meta: array without element description");
                 const MetaEntry& el = info.entries[e.ref_index];

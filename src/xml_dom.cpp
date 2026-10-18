@@ -28,17 +28,25 @@ std::string decode(std::string_view s) {
     out.reserve(s.size());
     for (size_t i = 0; i < s.size(); i++) {
         if (s[i] != '&') { out += s[i]; continue; }
-        const size_t semi = s.find(';', i);
-        if (semi == std::string_view::npos) { out += s[i]; continue; }
+        // a reference is a short run of name characters up to ';' (a bare '&' in text, as "AT&T", is kept as it is: it
+        // must not swallow the text up to a ';' further on)
+        size_t semi = i + 1;
+        while (semi < s.size() && semi - i <= 12 && (std::isalnum((unsigned char)s[semi]) || s[semi] == '#')) semi++;
+        if (semi >= s.size() || s[semi] != ';' || semi == i + 1) { out += s[i]; continue; }
         const std::string_view e = s.substr(i + 1, semi - i - 1);
         if (e == "amp") out += '&';
         else if (e == "lt") out += '<';
         else if (e == "gt") out += '>';
         else if (e == "quot") out += '"';
         else if (e == "apos") out += '\'';
-        else if (!e.empty() && e[0] == '#') {
+        else if (e[0] == '#') {
             const bool hex = e.size() > 1 && (e[1] == 'x' || e[1] == 'X');
-            append_utf8(out, (uint32_t)std::strtoul(std::string(e.substr(hex ? 2 : 1)).c_str(), nullptr, hex ? 16 : 10));
+            const std::string digits(e.substr(hex ? 2 : 1));
+            char* end = nullptr;
+            const unsigned long c = digits.empty() ? 0 : std::strtoul(digits.c_str(), &end, hex ? 16 : 10);
+            // no digits, a non-digit, or a code point outside Unicode: not a reference, kept as written
+            if (digits.empty() || *end || c == 0 || c > 0x10FFFF) { out += s.substr(i, semi - i + 1); }
+            else append_utf8(out, (uint32_t)c);
         } else { out += s.substr(i, semi - i + 1); }
         i = semi;
     }
@@ -51,9 +59,12 @@ std::string_view trim(std::string_view s) {
     return s;
 }
 
+constexpr int kMaxXmlDepth = 512;   // the game's files nest a dozen levels; past this a document is taken as malformed, not parsed on the stack
+
 struct Parser {
     std::string_view s;
     size_t p = 0;
+    int depth = 0;
 
     [[noreturn]] void fail(const char* what) const {
         size_t line = 1;
@@ -85,6 +96,8 @@ struct Parser {
     }
     XmlElement element() {
         if (!at("<")) fail("expected '<'");
+        if (depth >= kMaxXmlDepth) fail("elements nested too deep");
+        struct Depth { int& d; Depth(int& x) : d(x) { d++; } ~Depth() { d--; } } nesting(depth);
         p++;
         XmlElement e;
         e.name = name();

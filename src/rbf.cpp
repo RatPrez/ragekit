@@ -17,6 +17,7 @@ namespace rk {
 namespace {
 
 constexpr uint8_t kClose = 0xFF, kContent = 0xFD;
+constexpr size_t kMaxDepth = 512;
 
 struct In {
     std::span<const uint8_t> b;
@@ -258,6 +259,9 @@ RbfNode read_rbf(std::span<const uint8_t> file) {
             root = std::move(e);
             open.push_back(&root);
         } else {
+            // the reading is a loop, but writing, dumping and destroying a tree recurse: elements nested deeper than any
+            // game file (a dozen levels) by far are taken as malformed
+            if (open.size() >= kMaxDepth) throw Error("RBF: elements nested more than " + std::to_string(kMaxDepth) + " deep, at byte " + std::to_string(in.p));
             open.back()->children.push_back(std::move(e));
             open.push_back(&open.back()->children.back());
         }
