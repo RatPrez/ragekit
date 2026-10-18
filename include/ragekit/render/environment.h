@@ -68,6 +68,11 @@ struct Environment {
     float bloom_threshold_width = 1;           // postfx_bright_pass_thresh_width: the band it fades in over
     float bloom_intensity = 0.2f;              // postfx_intensity_bloom (at most misc.BloomIntensityClamp)
     float bloom_blend[3] = {1, 2, 0.5f};       // bloom.blurblendmult.small / med / large
+    // the vignette (PS_Composite) and the gradient filter (PS_GradientFilter)
+    float vignette_intensity = 0, vignette_radius = 10, vignette_contrast = 0;   // postfx_vignetting_*
+    Vec3 vignette_colour{0, 0, 0};
+    Vec3 gradient_top{1, 1, 1}, gradient_middle{1, 1, 1}, gradient_bottom{1, 1, 1};   // postfx_grad_*_col
+    float gradient_midpoint = 0.5f;            // postfx_grad_midpoint
 
     // SSAO (ssao.fxc's CPQSMix, the game's ssao_type 0): darkens both ambients
     bool ssao = true;

@@ -175,7 +175,9 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
         }
         return x;
     };
-    auto rgb = [&](const std::string& base) { return Vec3{v(base + "_r"), v(base + "_g"), v(base + "_b")}; };
+    auto rgb = [&](const std::string& base, Vec3 fallback = {}) {
+        return Vec3{v(base + "_r", fallback.x), v(base + "_g", fallback.y), v(base + "_b", fallback.z)};
+    };
 
     Environment e;
     e.hour = hour;
@@ -237,6 +239,14 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     e.reflection_emissive = v("reflection_tweak_emissive", 2);
     e.reflection_directional = v("reflection_tweak_directional", 0.3f);
     e.reflection_hdr = v("reflection_hdr_mult", 1);
+    e.vignette_intensity = v("postfx_vignetting_intensity");
+    e.vignette_radius = v("postfx_vignetting_radius", 10);
+    e.vignette_contrast = v("postfx_vignetting_contrast");
+    e.vignette_colour = rgb("postfx_vignetting_col");
+    e.gradient_top = rgb("postfx_grad_top_col", {1, 1, 1});
+    e.gradient_middle = rgb("postfx_grad_middle_col", {1, 1, 1});
+    e.gradient_bottom = rgb("postfx_grad_bottom_col", {1, 1, 1});
+    e.gradient_midpoint = v("postfx_grad_midpoint", 0.5f);
     e.bloom_threshold = std::max(v("postfx_bright_pass_thresh", 0.4f), setting("bloom.threshold.min", 0.4f));
     e.bloom_threshold_width = v("postfx_bright_pass_thresh_width", 1);
     e.bloom_intensity = std::min(v("postfx_intensity_bloom", 0.2f), setting("misc.BloomIntensityClamp.HD", 10));
