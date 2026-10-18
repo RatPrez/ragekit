@@ -465,7 +465,9 @@ BlockId write_bound(Builder& b, const Bound& bound, std::map<const Bound*, Block
             tr1 = b.array(Segment::System, pack_transforms(trs));
             tr2 = bound.has_child_transforms2 && bound.child_transforms2.size() == n ? b.array(Segment::System, pack_transforms(bound.child_transforms2)) : tr1;
             boxes = b.array(Segment::System, bbs);
-            if (bound.has_child_flags) { f1 = b.array(Segment::System, fl1); f2 = b.array(Segment::System, fl1); }
+            // the two flag arrays are one block in every composite of the game's .ybn files (1,514 of 1,514 looked at),
+            // as the two transform arrays are when there is no second one
+            if (bound.has_child_flags) f1 = f2 = b.array(Segment::System, fl1);
         }
         BlockId bvh = bound.composite_bvh ? write_bvh(b, *bound.composite_bvh) : BlockId{};
         w.ptr(children);
