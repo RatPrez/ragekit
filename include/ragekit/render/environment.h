@@ -25,6 +25,18 @@ struct Sky {
     static Sky plain(Vec3 zenith, Vec3 horizon);
 };
 
+/// The fog (the game's globalFogParams, from the timecycle's fog_*): colours linear HDR (times fog_hdr / fog_haze_hdr).
+struct Fog {
+    float start = 0;                           // fog_start (m)
+    float density = 0;                         // fog_density (per 10 km)
+    float falloff = 0, base_height = 0;        // fog_falloff (per km of height), fog_base_height (m)
+    float alpha = 1;                           // fog_alpha
+    Vec3 near_colour, colour, east_colour, moon_colour;   // fog_near_col, fog_col (towards the sun), fog_east_col, fog_moon_col
+    float sun_power = 8, moon_power = 18;      // fog_sun_lighting_calc_pow, fog_moon_lighting_calc_pow
+    float haze_density = 0, haze_alpha = 1, haze_start = 0;   // fog_haze_*
+    Vec3 haze_colour;
+};
+
 /// Hable's filmic curve as postfx.fxc's PS_Composite takes it (BrightTonemapParams / DarkTonemapParams).
 struct Tonemap {
     float a = 0.22f, b = 0.3f, c = 0.1f, d = 0.2f, e = 0.01f, f = 0.3f, w = 4.0f;
@@ -54,6 +66,8 @@ struct Environment {
 
     // ---- the backdrop and its reflection
     Sky sky;
+    bool fog = true;
+    Fog fogs;                                  // fog density 0: none (the presets)
     Vec3 sky_zenith{3.0f, 4.2f, 6.5f}, sky_horizon{5.0f, 5.5f, 6.0f};
 
     // ---- local lights

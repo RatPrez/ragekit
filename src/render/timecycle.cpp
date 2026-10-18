@@ -259,6 +259,24 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     s.mie_intensity = v("sky_sun_mie_intensity_mult", 0.2f);
     s.sun_disc = rgb("sky_sun_disc_col") * v("sky_sun_hdr");
     s.sun_disc_size = v("sky_sun_disc_size", 2);
+    // the fog
+    Fog& f = e.fogs;
+    const float fog_hdr = v("fog_hdr", 1);
+    f.start = v("fog_start");
+    f.density = v("fog_density");
+    f.falloff = v("fog_falloff");
+    f.base_height = v("fog_base_height");
+    f.alpha = v("fog_alpha", 1);
+    f.near_colour = rgb("fog_near_col") * fog_hdr;
+    f.colour = rgb("fog_col") * fog_hdr;
+    f.east_colour = rgb("fog_east_col") * fog_hdr;
+    f.moon_colour = rgb("fog_moon_col") * fog_hdr;
+    f.sun_power = v("fog_sun_lighting_calc_pow", 8);
+    f.moon_power = v("fog_moon_lighting_calc_pow", 18);
+    f.haze_density = v("fog_haze_density");
+    f.haze_alpha = v("fog_haze_alpha", 1);
+    f.haze_start = v("fog_haze_start");
+    f.haze_colour = rgb("fog_haze_col") * v("fog_haze_hdr", 1);
     e.vignette_intensity = v("postfx_vignetting_intensity");
     e.vignette_radius = v("postfx_vignetting_radius", 10);
     e.vignette_contrast = v("postfx_vignetting_contrast");
