@@ -2,6 +2,7 @@
 //   - counts: map files, MLO instances, collision files (with the share the game's bounds store lists)
 //   - the rotation convention of MLO instances, decided by the game's own interior proxies (gta5_cache_y.dat,
 //     CInteriorProxy: position, orientation and world box the game computed for every interior instance)
+//   - a corrupted copy of the cache is not taken
 //   - queries at known places: Michael's house (the v_michael interior inside the building), Franklin's house
 //   - with --oracle <tsv> (`oracle world <game> <tsv>`): the ymaps / ybns CodeWalker loads with every DLC pack, name by
 //     name and archive by archive (CodeWalker's rules differ in known ways: listed, not failed)
@@ -9,16 +10,20 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <string>
 #include "ragekit/bounds.h"
 #include "ragekit/gameindex.h"
 #include "ragekit/hash.h"
+#include "ragekit/rsc.h"
 #include "ragekit/world.h"
 
 using namespace rk;
+namespace fs = std::filesystem;
 
 static int fails = 0;
 static void check(bool ok, const char* what) {
@@ -186,6 +191,34 @@ int main(int argc, char** argv) {
             for (auto& e : ex_cw) std::printf("    only cw: %s\n", e.c_str());
             for (auto& e : ex_rk) std::printf("    only rk: %s\n", e.c_str());
         }
+    }
+
+    // a copy of the cache whose last MLO instance names a map past the table is not taken (it crashed the first query)
+    if (info.from_cache && !w.mlo_instances().empty()) {
+        const fs::path dir = fs::temp_directory_path() / "rk_world_test_cache";
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+        fs::create_directories(dir);
+        const fs::path copy = dir / fs::path(info.cache_path).filename();
+        Bytes bin = rsc::read_file(info.cache_path);
+        // the MLO rows follow the maps: find the last row by its archetype and map index
+        const WorldMloInstance& last = w.mlo_instances().back();
+        size_t at = SIZE_MAX;
+        for (size_t i = bin.size() - sizeof(WorldMloInstance); i-- > 0;)
+            if (std::memcmp(&bin[i], &last, sizeof(WorldMloInstance)) == 0) { at = i; break; }
+        check(at != SIZE_MAX, "world cache: the last MLO instance's row is found in the cache");
+        if (at != SIZE_MAX) {
+            const uint32_t bad = (uint32_t)w.maps().size() + 100;
+            std::memcpy(&bin[at + offsetof(WorldMloInstance, map)], &bad, 4);
+            rsc::write_file(copy.string(), bin);
+            WorldIndexOptions o2 = o;
+            o2.cache_folder = dir.string();
+            o2.progress = {};
+            WorldIndex w2 = WorldIndex::open(gi, o2);
+            check(!w2.info().from_cache && w2.mlo_instances().size() == w.mlo_instances().size(),
+                  "world cache: a row naming a map past the table makes the cache unusable (scanned again)");
+        }
+        fs::remove_all(dir, ec);
     }
     std::printf("%s\n", fails ? "FAILED" : "all ok");
     return fails ? 1 : 0;

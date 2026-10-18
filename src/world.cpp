@@ -395,24 +395,47 @@ struct WorldIndex::Impl {
         std::ifstream f(path, std::ios::binary);
         if (!f) return false;
         Bytes b((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        // read into locals and take them only once they check: a cache cut short or corrupted must leave the index empty
+        // for the scan that follows, and every index a row carries must land in its table
+        WorldIndexInfo in = info;
+        std::vector<WorldMap> ms;
+        std::vector<WorldMloInstance> ls;
+        std::vector<WorldBounds> bs;
         try {
             Reader r{b.data(), b.data() + b.size()};
             r.need(4);
             if (std::memcmp(r.p, "RKWI", 4) != 0) return false;
             r.p += 4;
             if (r.pod<uint32_t>() != WorldIndex::kFormat || r.str() != key) return false;
-            info.scan_seconds = r.pod<double>();
-            info.archives_invalidated = r.pod<uint32_t>();
-            info.archives_enabled = r.pod<uint32_t>();
-            maps = r.vec<WorldMap>();
-            mlos = r.vec<WorldMloInstance>();
-            bounds = r.vec<WorldBounds>();
+            in.scan_seconds = r.pod<double>();
+            in.archives_invalidated = r.pod<uint32_t>();
+            in.archives_enabled = r.pod<uint32_t>();
+            ms = r.vec<WorldMap>();
+            ls = r.vec<WorldMloInstance>();
+            bs = r.vec<WorldBounds>();
             const uint32_t nw = r.pod<uint32_t>();
-            for (uint32_t i = 0; i < nw; i++) info.warnings.push_back(r.str());
-            return true;
+            r.need((size_t)nw * 4);   // every string costs at least its length word
+            in.warnings.clear();
+            for (uint32_t i = 0; i < nw; i++) in.warnings.push_back(r.str());
         } catch (const Error&) {
             return false;
         }
+        // a file row must be one the game index holds (the cache key is the game index's, so a whole cache always is)
+        auto known = [&](const IndexedFile& x) {
+            if (x.ext >= gi->extensions().size()) return false;
+            for (const IndexedFile& v : gi->versions(x.name_hash, gi->extensions()[x.ext]))
+                if (v.archive == x.archive && v.entry == x.entry && v.dir == x.dir && v.name_id == x.name_id && v.rank == x.rank) return true;
+            return false;
+        };
+        for (const WorldMap& m : ms)
+            if (m.parent_map >= (int32_t)ms.size() || m.parent_map < -1 || !known(m.file)) return false;
+        for (const WorldMloInstance& l : ls) if (l.map >= ms.size()) return false;
+        for (const WorldBounds& x : bs) if (!known(x.file)) return false;
+        info = std::move(in);
+        maps = std::move(ms);
+        mlos = std::move(ls);
+        bounds = std::move(bs);
+        return true;
     }
 
     void scan(const WorldIndexOptions& opt) {
