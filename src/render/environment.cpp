@@ -50,6 +50,10 @@ Environment Environment::preset(std::string_view name) {
     e.sky_zenith = p.zenith; e.sky_horizon = p.horizon;
     e.ambient_wrap = p.wrap;
     e.exposure = p.exposure; e.exposure_max = p.exp_max;
+    // bloom: threshold, width, intensity (EXTRASUNNY's at those hours)
+    if (name == "evening") { e.bloom_threshold = 0.798f; e.bloom_threshold_width = 0.598f; e.bloom_intensity = 0.4f; }
+    else if (name == "night" || name == "interior") { e.bloom_threshold = 0.4f; e.bloom_threshold_width = 0.25f; e.bloom_intensity = 1; }
+    else { e.bloom_threshold = 1.698f; e.bloom_threshold_width = 1.445f; e.bloom_intensity = 0.125f; }
     if (name == "interior") {
         // a room lit by its own lights: no sun, the artificial interior ambient, night hours (lights on)
         e.hour = 22;

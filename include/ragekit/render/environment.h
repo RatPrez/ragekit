@@ -54,6 +54,13 @@ struct Environment {
     float correct_cutoff = 0, shift_cutoff = 0, saturation = 1;
     float gamma = 1 / 2.2f;                    // PS_Composite's final power (the game's brightness setting)
     bool tonemap = true;                       // false: the colour times 2^EV, clamped (no curve, no correction)
+    // bloom (PS_CalcBloom0, PS_GaussBlur9x9, PS_Composite): the exposed colour, faded in over a band of its luminance
+    // above the threshold, blurred at three sizes and added before the tone map
+    bool bloom = true;
+    float bloom_threshold = 0.4f;              // postfx_bright_pass_thresh, at least bloom.threshold.min (exposed luminance)
+    float bloom_threshold_width = 1;           // postfx_bright_pass_thresh_width: the band it fades in over
+    float bloom_intensity = 0.2f;              // postfx_intensity_bloom (at most misc.BloomIntensityClamp)
+    float bloom_blend[3] = {1, 2, 0.5f};       // bloom.blurblendmult.small / med / large
 
     bool interior = false;                     // the artificial interior ambient (the game's interior stencil)
     bool vertex_ao = true;                     // COLOR0.r / .g as the ambient's occlusion
