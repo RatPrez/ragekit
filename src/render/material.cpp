@@ -293,6 +293,11 @@ Material make_material(const Shader& s) {
         if (r.spec == SpecIntensity::None) r.fres = 0.98f;   // no spec: the effect's constant
     }
     if (n == "cpv_only" || n == "trees_shadow_proxy" || n == "decal_shadow_only") r.features |= FeatShadowOnly;
+    // decal_dirt (rat-tooling research, drawable shaders 1.3 / 3.2): albedo diffuse * COLOR0.rgb, alpha dot(diffuse.rgb, dirtDecalMask) * COLOR0.a
+    if (n == "decal_dirt") r.alpha = AlphaMode::DirtDecal;
+    // decal_normal_only writes the G-buffer's normal alone (no albedo, no spec): a forward backend cannot bend the surface under it, so it is
+    // left out of the colour pass
+    if (n == "decal_normal_only") r.features |= FeatShadowOnly;
     if (r.spec == SpecIntensity::None || (m.family == Family::Terrain && r.mult <= 0)) { r.mult = 0; r.spec = SpecIntensity::None; }
 
     m.features = r.features;
@@ -319,6 +324,10 @@ Material make_material(const Shader& s) {
     }
     Vec4 dc = vec(s, "dirtColor", {0.27f, 0.25f, 0.22f, 0});
     c.dirt_colour = {dc.x, dc.y, dc.z, 0};
+    if (m.alpha == AlphaMode::DirtDecal) {   // decal_dirt has no dirt: the slot carries dirtDecalMask (default R)
+        Vec4 mask = vec(s, "dirtDecalMask", {1, 0, 0, 0});
+        c.dirt_colour = {mask.x, mask.y, mask.z, 0};
+    }
     c.uv_sets[0] = r.livery_uv; c.uv_sets[1] = r.spec_uv; c.uv_sets[2] = r.dirt_uv;
     if (m.family == Family::Hair) {
         Vec4 ai = vec(s, "anisotropicSpecularIntensity", {0.1f, 0.15f, 0, 0});

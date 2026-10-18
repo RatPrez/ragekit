@@ -76,6 +76,7 @@ enum class AlphaMode : uint8_t {
     VehicleGlass = 1,  // sat(diffuse.a + window tint.w · COLOR0.a)
     LightId = 2,       // diffuse.a: COLOR0.a is a light id on vehicle light meshes
     Diffuse = 3,       // diffuse.a: every ped vertex shader but ped_default's passes COLOR0.a = 1
+    DirtDecal = 4,     // decal_dirt: dot(diffuse.rgb, dirtDecalMask) · COLOR0.a (the mask in MaterialConstants::dirt_colour), albedo · COLOR0.rgb
 };
 
 /// Feature switches (Material::features).
