@@ -56,9 +56,15 @@ std::string hash_name(uint32_t h) {
 
 uint32_t hash_or_name(std::string_view s) {
     if (s.empty()) return 0;
-    if (s.size() == 13 && s.substr(0, 5) == "hash_")
+    // "hash_XXXXXXXX" and "0x..." only when every character after the prefix is a hex digit: "hash_lamppost" is a name
+    auto all_hex = [](std::string_view t) {
+        if (t.empty()) return false;
+        for (char c : t) if (!std::isxdigit((unsigned char)c)) return false;
+        return true;
+    };
+    if (s.size() == 13 && s.substr(0, 5) == "hash_" && all_hex(s.substr(5)))
         return (uint32_t)std::strtoul(std::string(s.substr(5)).c_str(), nullptr, 16);
-    if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+    if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') && all_hex(s.substr(2)))
         return (uint32_t)std::strtoul(std::string(s.substr(2)).c_str(), nullptr, 16);
     bool digits = true;
     for (char c : s) if (!std::isdigit((unsigned char)c)) { digits = false; break; }
