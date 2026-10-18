@@ -11,10 +11,14 @@ namespace rk {
 
 namespace {
 
+// 5 and 6 bit channels widened by repeating their top bits (= round(v * 255 / 31), what D3D does); the BC1 and BC4
+// palettes are the endpoints' exact mixes rounded to the nearest 8-bit value (D3D interpolates in float and rounds).
+inline uint8_t expand5(uint32_t v) { return (uint8_t)((v << 3) | (v >> 2)); }
+inline uint8_t expand6(uint32_t v) { return (uint8_t)((v << 2) | (v >> 4)); }
 inline void rgb565(uint16_t c, uint8_t out[3]) {
-    out[0] = (uint8_t)(((c >> 11) & 31) * 255 / 31);
-    out[1] = (uint8_t)(((c >> 5) & 63) * 255 / 63);
-    out[2] = (uint8_t)((c & 31) * 255 / 31);
+    out[0] = expand5((c >> 11) & 31);
+    out[1] = expand6((c >> 5) & 63);
+    out[2] = expand5(c & 31);
 }
 
 // Writes a 4x4 block of RGBA into img at (bx*4, by*4), clipping at the edges.
@@ -34,12 +38,12 @@ void decode_bc1_block(const uint8_t* s, uint8_t colors[16][4], bool allow_alpha)
     rgb565(c1, p[1]); p[1][3] = 255;
     if (c0 > c1 || !allow_alpha) {
         for (int i = 0; i < 3; i++) {
-            p[2][i] = (uint8_t)((2 * p[0][i] + p[1][i]) / 3);
-            p[3][i] = (uint8_t)((p[0][i] + 2 * p[1][i]) / 3);
+            p[2][i] = (uint8_t)((2 * p[0][i] + p[1][i] + 1) / 3);
+            p[3][i] = (uint8_t)((p[0][i] + 2 * p[1][i] + 1) / 3);
         }
         p[2][3] = p[3][3] = 255;
     } else {
-        for (int i = 0; i < 3; i++) { p[2][i] = (uint8_t)((p[0][i] + p[1][i]) / 2); p[3][i] = 0; }
+        for (int i = 0; i < 3; i++) { p[2][i] = (uint8_t)((p[0][i] + p[1][i] + 1) / 2); p[3][i] = 0; }
         p[2][3] = 255; p[3][3] = 0;
     }
     uint32_t bits = (uint32_t)(s[4] | (s[5] << 8) | (s[6] << 16) | ((uint32_t)s[7] << 24));
@@ -53,9 +57,9 @@ void decode_bc4_block(const uint8_t* s, uint8_t out[16]) {
     uint8_t a0 = s[0], a1 = s[1];
     uint8_t p[8];
     p[0] = a0; p[1] = a1;
-    if (a0 > a1) for (int i = 1; i < 7; i++) p[i + 1] = (uint8_t)(((7 - i) * a0 + i * a1) / 7);
+    if (a0 > a1) for (int i = 1; i < 7; i++) p[i + 1] = (uint8_t)(((7 - i) * a0 + i * a1 + 3) / 7);
     else {
-        for (int i = 1; i < 5; i++) p[i + 1] = (uint8_t)(((5 - i) * a0 + i * a1) / 5);
+        for (int i = 1; i < 5; i++) p[i + 1] = (uint8_t)(((5 - i) * a0 + i * a1 + 2) / 5);
         p[6] = 0; p[7] = 255;
     }
     uint64_t bits = 0;
@@ -265,8 +269,8 @@ Image decode_texels(TextureFormat f, uint32_t w, uint32_t h, std::span<const uin
                 case TextureFormat::A8B8G8R8: std::memcpy(d, s + i * 4, 4); break;
                 case TextureFormat::A1R5G5B5: {
                     uint16_t v = (uint16_t)(s[i * 2] | (s[i * 2 + 1] << 8));
-                    d[0] = (uint8_t)(((v >> 10) & 31) * 255 / 31); d[1] = (uint8_t)(((v >> 5) & 31) * 255 / 31);
-                    d[2] = (uint8_t)((v & 31) * 255 / 31); d[3] = (v & 0x8000) ? 255 : 0;
+                    d[0] = expand5((v >> 10) & 31); d[1] = expand5((v >> 5) & 31);
+                    d[2] = expand5(v & 31); d[3] = (v & 0x8000) ? 255 : 0;
                     break;
                 }
                 case TextureFormat::A8: d[0] = d[1] = d[2] = 0; d[3] = s[i]; break;
@@ -305,7 +309,7 @@ struct Bc1Pick {
 void bc1_palette(uint16_t c0, uint16_t c1, int p[4][3]) {
     uint8_t a[3], b[3];
     rgb565(c0, a); rgb565(c1, b);
-    for (int c = 0; c < 3; c++) { p[0][c] = a[c]; p[1][c] = b[c]; p[2][c] = (2 * a[c] + b[c]) / 3; p[3][c] = (a[c] + 2 * b[c]) / 3; }
+    for (int c = 0; c < 3; c++) { p[0][c] = a[c]; p[1][c] = b[c]; p[2][c] = (2 * a[c] + b[c] + 1) / 3; p[3][c] = (a[c] + 2 * b[c] + 1) / 3; }
 }
 
 // Nearest palette entry per pixel for the endpoints c0, c1 (either order); keeps the result in best when it is better.
@@ -323,8 +327,29 @@ void bc1_try(const uint8_t px[16][4], uint16_t c0, uint16_t c1, Bc1Pick& best) {
         }
         t.idx[i] = (uint8_t)bk;
         t.err += bd;
+        if (t.err >= best.err) return;   // no better than what is kept
     }
-    if (t.err < best.err) best = t;
+    best = t;
+}
+
+// Moves the kept endpoints one 565 step at a time (either endpoint, any channel, either way) while a step lowers the
+// error, at most four rounds: least squares works in floats and rounds once.
+void bc1_refine(const uint8_t px[16][4], Bc1Pick& best) {
+    static const uint16_t kStep[3] = {1 << 11, 1 << 5, 1};
+    static const uint16_t kMask[3] = {31 << 11, 63 << 5, 31};
+    for (int round = 0; round < 4; round++) {
+        const Bc1Pick base = best;
+        for (int e = 0; e < 2; e++)
+            for (int c = 0; c < 3; c++)
+                for (int s = -1; s <= 1; s += 2) {
+                    const uint16_t v = e ? base.c1 : base.c0;
+                    const int field = (v & kMask[c]) / kStep[c] + s, top = kMask[c] / kStep[c];
+                    if (field < 0 || field > top) continue;
+                    const uint16_t w = (uint16_t)((v & ~kMask[c]) | field * kStep[c]);
+                    bc1_try(px, e ? base.c0 : w, e ? w : base.c1, best);
+                }
+        if (best.err >= base.err) break;
+    }
 }
 
 // Least-squares endpoints for fixed indices (index k puts weight w[k] on c0): false when every pixel uses one weight.
@@ -348,7 +373,8 @@ void bc1_solid_pair(int v, int bits, int& a, int& b) {
     int bd = INT32_MAX;
     for (int x = 0; x <= top; x++)
         for (int y = 0; y <= top; y++) {
-            const int ex = x * 255 / top, ey = y * 255 / top, d = std::abs((2 * ex + ey) / 3 - v);
+            const int ex = bits == 5 ? expand5((uint32_t)x) : expand6((uint32_t)x), ey = bits == 5 ? expand5((uint32_t)y) : expand6((uint32_t)y);
+            const int d = std::abs((2 * ex + ey + 1) / 3 - v);
             if (d < bd) { bd = d; a = x; b = y; }
         }
 }
@@ -368,8 +394,9 @@ void bc1_solid(const uint8_t px[16][4], Bc1Pick& best) {
 }
 
 // Encodes 16 RGBA pixels as a BC1 colour block (4 colours, no punch-through alpha). The endpoints start at the pixels
-// furthest apart along the colours' principal axis (a bounding box picks the wrong diagonal for a red-green ramp), then
-// two rounds of least squares refit them to the chosen indices; the best candidate wins.
+// furthest apart along the colours' principal axis (a bounding box picks the wrong diagonal for a red-green ramp) and at
+// the box corners, two rounds of least squares refit them to the chosen indices, and 565 steps refine the best; every
+// candidate is scored by the palette the decoder builds.
 void encode_bc1_block(const uint8_t px[16][4], uint8_t out[8]) {
     Bc1Pick best;
     float mean[3] = {}, mn[3] = {255, 255, 255}, mx[3] = {0, 0, 0};
@@ -416,6 +443,7 @@ void encode_bc1_block(const uint8_t px[16][4], uint8_t out[8]) {
             if (!bc1_fit(px, best.idx, e0, e1)) break;
             bc1_try(px, to565(e0), to565(e1), best);
         }
+        bc1_refine(px, best);
     }
     uint16_t c0 = best.c0, c1 = best.c1;
     uint32_t bits = 0;
@@ -454,14 +482,14 @@ void encode_bc4_block(const uint8_t v[16], uint8_t out[8]) {
     if (mn == mx) { out[0] = out[1] = mn; std::memset(out + 2, 0, 6); return; }
     uint8_t p[8];
     p[0] = mx; p[1] = mn;   // a0 > a1: 8 interpolated values
-    for (int i = 1; i < 7; i++) p[i + 1] = (uint8_t)(((7 - i) * mx + i * mn) / 7);
+    for (int i = 1; i < 7; i++) p[i + 1] = (uint8_t)(((7 - i) * mx + i * mn + 3) / 7);
     uint64_t bits;
     int err = bc4_indices(v, p, bits);
     uint8_t a0 = mx, a1 = mn;
     if (err > 0 && imn <= imx && (mn == 0 || mx == 255)) {
         uint8_t q[8];
         q[0] = imn; q[1] = imx;   // a0 <= a1: 6 interpolated values, then 0 and 255
-        for (int i = 1; i < 5; i++) q[i + 1] = (uint8_t)(((5 - i) * imn + i * imx) / 5);
+        for (int i = 1; i < 5; i++) q[i + 1] = (uint8_t)(((5 - i) * imn + i * imx + 2) / 5);
         q[6] = 0; q[7] = 255;
         uint64_t qbits;
         if (bc4_indices(v, q, qbits) < err) { a0 = imn; a1 = imx; bits = qbits; }
@@ -496,7 +524,7 @@ Bytes encode_level(const Image& img, TextureFormat f) {
                         encode_bc1_block(px, o + 8);
                         break;
                     case TextureFormat::DXT3:
-                        for (int i = 0; i < 16; i += 2) o[i / 2] = (uint8_t)((px[i][3] >> 4) | (px[i + 1][3] & 0xF0));
+                        for (int i = 0; i < 16; i += 2) o[i / 2] = (uint8_t)((px[i][3] + 8) / 17 | (px[i + 1][3] + 8) / 17 << 4);   // nearest of a * 17
                         encode_bc1_block(px, o + 8);
                         break;
                     case TextureFormat::ATI1:

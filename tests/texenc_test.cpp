@@ -52,7 +52,30 @@ int main() {
     check("red-green ramp", diag, TextureFormat::DXT1, 14.0);
     check("blue-orange ramp", anti, TextureFormat::DXT1, 14.0);
     check("gradient", grad, TextureFormat::DXT1, 3.0);
-    check("warm noise", noise, TextureFormat::DXT1, 14.5);
+    // 14.05 before the encoder scored its candidates with the decoder's own (rounded) palette and refined them in 565 steps
+    check("warm noise", noise, TextureFormat::DXT1, 14.0);
+
+    // the decoders against D3D's rules: 565 widened by bit replication, palettes interpolated exactly and rounded
+    {
+        // c0 = red 4 (33), c1 = red 1 (8); pixels 0..3 take indices 0..3: 33, 8, round(74 / 3) = 25, round(49 / 3) = 16
+        const uint8_t bc1[8] = {0x00, 0x20, 0x00, 0x08, 0xE4, 0, 0, 0};
+        const Image d = decode_texels(TextureFormat::DXT1, 4, 4, bc1);
+        const bool ok = d.px(0, 0)[0] == 33 && d.px(1, 0)[0] == 8 && d.px(2, 0)[0] == 25 && d.px(3, 0)[0] == 16;
+        std::printf("%-28s %d %d %d %d (33 8 25 16)  %s\n", "bc1 palette", d.px(0, 0)[0], d.px(1, 0)[0], d.px(2, 0)[0], d.px(3, 0)[0], ok ? "ok" : "FAIL");
+        if (!ok) fails++;
+        // BC4 a0 = 200, a1 = 101, pixel 0 index 2: round((6 * 200 + 101) / 7) = 186
+        const uint8_t bc4[8] = {200, 101, 2, 0, 0, 0, 0, 0};
+        const Image e = decode_texels(TextureFormat::ATI1, 4, 4, bc4);
+        const bool ok4 = e.px(0, 0)[0] == 186;
+        std::printf("%-28s %d (186)  %s\n", "bc4 palette", e.px(0, 0)[0], ok4 ? "ok" : "FAIL");
+        if (!ok4) fails++;
+        // DXT3 alpha 9 is nearest to 17 (index 1), not 0
+        Image a = make(4, 4, [](uint32_t, uint32_t, uint8_t* p) { p[0] = p[1] = p[2] = 0; p[3] = 9; });
+        const Texture t = encode_texture(a, TextureFormat::DXT3, "a", 1);
+        const bool ok3 = decode_texture(t).px(0, 0)[3] == 17;
+        std::printf("%-28s %d (17)  %s\n", "dxt3 alpha 9", decode_texture(t).px(0, 0)[3], ok3 ? "ok" : "FAIL");
+        if (!ok3) fails++;
+    }
     check("alpha ramp", alpha, TextureFormat::DXT5, 2.0, 2.0);
     check("alpha cutout", cut, TextureFormat::DXT5, 2.0, 1.0);
     check("alpha cutout dxt3", cut, TextureFormat::DXT3, 2.0, 1.0);
