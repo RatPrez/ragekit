@@ -229,6 +229,9 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     e.shift_colour = rgb("postfx_shift_col");
     e.shift_cutoff = v("postfx_shift_cutoff");
     e.saturation = v("postfx_desaturation", 1);   // PS_Composite: lum + Desaturate * (c - lum); 1 in every weather
+    e.ssao_strength = v("ssao_inten", 4);
+    e.ssao_cp = v("ssao_cp_strength", 0.5f);
+    e.ssao_qs = v("ssao_qs_strength", 1);
     e.reflection_interior_amb = v("reflection_tweak_interior_amb", 2);
     e.reflection_exterior_amb = v("reflection_tweak_exterior_amb", 2);
     e.reflection_emissive = v("reflection_tweak_emissive", 2);

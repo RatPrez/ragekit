@@ -69,6 +69,11 @@ struct Environment {
     float bloom_intensity = 0.2f;              // postfx_intensity_bloom (at most misc.BloomIntensityClamp)
     float bloom_blend[3] = {1, 2, 0.5f};       // bloom.blurblendmult.small / med / large
 
+    // SSAO (ssao.fxc's CPQSMix, the game's ssao_type 0): darkens both ambients
+    bool ssao = true;
+    float ssao_strength = 4;                   // ssao_inten: the occlusion's power
+    float ssao_cp = 0.5f, ssao_qs = 1;         // ssao_cp_strength / ssao_qs_strength: times it, for the two passes
+
     bool interior = false;                     // the artificial interior ambient (the game's interior stencil)
     bool vertex_ao = true;                     // COLOR0.r / .g as the ambient's occlusion
 
@@ -83,6 +88,6 @@ struct Environment {
 };
 
 /// What a backend shows instead of the lit colour.
-enum class DebugView : int { Lit = 0, Albedo, Normals, NormalMap, SpecMap, UvCheck, Colour0, Colour1, Alpha, Reflection };
+enum class DebugView : int { Lit = 0, Albedo, Normals, NormalMap, SpecMap, UvCheck, Colour0, Colour1, Alpha, Reflection, Occlusion };
 
 } // namespace rk::render
