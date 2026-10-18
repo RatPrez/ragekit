@@ -9,6 +9,22 @@
 
 namespace rk::render {
 
+/// The sky (sky_system.fxc's constants, from the timecycle's sky_*): colours linear, before `hdr`.
+struct Sky {
+    Vec3 azimuth_east{0.5f, 0.6f, 0.8f}, azimuth_west{0.5f, 0.6f, 0.8f}, azimuth_transition{0.5f, 0.6f, 0.8f};
+    float azimuth_transition_position = 0.5f;  // 0 east (+X) .. 1 west, along sqrt(0.5 - 0.5 x)
+    Vec3 zenith{0.1f, 0.2f, 0.4f}, zenith_transition{0.3f, 0.4f, 0.6f};
+    float zenith_transition_position = 0.3f;   // the height (|z| of the direction) the zenith blend starts at
+    float zenith_east_blend = 0.8f, zenith_west_blend = 0.8f, zenith_blend_start = 0;
+    float hdr = 1;                             // sky_hdr
+    Vec3 sun_colour;                           // the sun's scattering colour: sky_sun_col * sky_sun_hdr
+    float mie_phase = 0.95f, mie_scatter = 1, mie_intensity = 0.2f;   // sky_sun_miephase / _miescatter / _mie_intensity_mult
+    Vec3 sun_disc;                             // sky_sun_disc_col * sky_sun_hdr
+    float sun_disc_size = 2;                   // sky_sun_disc_size (degrees)
+    /// A plain sky between a horizon and a zenith colour (HDR already), no sun scattering.
+    static Sky plain(Vec3 zenith, Vec3 horizon);
+};
+
 /// Hable's filmic curve as postfx.fxc's PS_Composite takes it (BrightTonemapParams / DarkTonemapParams).
 struct Tonemap {
     float a = 0.22f, b = 0.3f, c = 0.1f, d = 0.2f, e = 0.01f, f = 0.3f, w = 4.0f;
@@ -37,6 +53,7 @@ struct Environment {
     float reflection_hdr = 1;                  // reflection_hdr_mult
 
     // ---- the backdrop and its reflection
+    Sky sky;
     Vec3 sky_zenith{3.0f, 4.2f, 6.5f}, sky_horizon{5.0f, 5.5f, 6.0f};
 
     // ---- local lights

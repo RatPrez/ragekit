@@ -20,6 +20,17 @@ Vec3 Environment::sun_at(float hour, float sun_roll_deg, float moon_roll_deg) {
     return l > 0 ? d * (1 / l) : Vec3{0, 0, 1};
 }
 
+Sky Sky::plain(Vec3 zenith, Vec3 horizon) {
+    Sky s;
+    s.azimuth_east = s.azimuth_west = s.azimuth_transition = s.zenith_transition = horizon;
+    s.zenith = zenith;
+    s.zenith_transition_position = 0;
+    s.zenith_east_blend = s.zenith_west_blend = 0;
+    s.hdr = 1;
+    s.sun_colour = s.sun_disc = {0, 0, 0};
+    return s;
+}
+
 Environment Environment::preset(std::string_view name) {
     // the game's timecycle values (GLOBAL region) for each preset, read with Timecycle::environment
     struct P {
@@ -75,6 +86,7 @@ Environment Environment::preset(std::string_view name) {
         e.auto_exposure = false;
         e.exposure = 0;
     }
+    e.sky = Sky::plain(e.sky_zenith, e.sky_horizon);
     return e;
 }
 

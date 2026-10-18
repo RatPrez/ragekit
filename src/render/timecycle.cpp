@@ -239,6 +239,26 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     e.reflection_emissive = v("reflection_tweak_emissive", 2);
     e.reflection_directional = v("reflection_tweak_directional", 0.3f);
     e.reflection_hdr = v("reflection_hdr_mult", 1);
+    // the sky: sky_system.fxc's constants
+    auto skycol = [&](const std::string& base) { return rgb(base) * v(base + "_inten", 1); };
+    Sky& s = e.sky;
+    s.azimuth_east = skycol("sky_azimuth_east_col");
+    s.azimuth_west = skycol("sky_azimuth_west_col");
+    s.azimuth_transition = skycol("sky_azimuth_transition_col");
+    s.azimuth_transition_position = v("sky_azimuth_transition_position", 0.5f);
+    s.zenith = skycol("sky_zenith_col");
+    s.zenith_transition = skycol("sky_zenith_transition_col");
+    s.zenith_transition_position = v("sky_zenith_transition_position", 0.3f);
+    s.zenith_east_blend = v("sky_zenith_transition_east_blend", 0.8f);
+    s.zenith_west_blend = v("sky_zenith_transition_west_blend", 0.8f);
+    s.zenith_blend_start = v("sky_zenith_blend_start");
+    s.hdr = v("sky_hdr", 1);
+    s.sun_colour = rgb("sky_sun_col") * v("sky_sun_hdr");
+    s.mie_phase = v("sky_sun_miephase", 0.95f);
+    s.mie_scatter = v("sky_sun_miescatter", 1);
+    s.mie_intensity = v("sky_sun_mie_intensity_mult", 0.2f);
+    s.sun_disc = rgb("sky_sun_disc_col") * v("sky_sun_hdr");
+    s.sun_disc_size = v("sky_sun_disc_size", 2);
     e.vignette_intensity = v("postfx_vignetting_intensity");
     e.vignette_radius = v("postfx_vignetting_radius", 10);
     e.vignette_contrast = v("postfx_vignetting_contrast");
