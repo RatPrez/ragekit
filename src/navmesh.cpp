@@ -142,7 +142,11 @@ void NavMesh::set_polys(const std::vector<PolyShape>& in) {
         p.set_vertex_count((uint32_t)n);
         if (kept) {
             const NavPoly& o = old_polys[s.source];
-            for (size_t i = 0; i < n; i++) ni.push_back(old_indices[o.first_index + i]);
+            if ((size_t)o.first_index + n > old_indices.size()) throw Error("ynv: polygon " + std::to_string(s.source) + " reaches past the index list");
+            for (size_t i = 0; i < n; i++) {
+                if (old_indices[o.first_index + i] >= nv.size()) throw Error("ynv: polygon " + std::to_string(s.source) + " names a vertex past the end");
+                ni.push_back(old_indices[o.first_index + i]);
+            }
             for (uint32_t l : was_in[s.source]) leaf_polys[l].push_back((uint32_t)k);
         } else {
             Vec3 mn = s.corners[0], mx = s.corners[0], sum{};
@@ -257,6 +261,7 @@ std::vector<std::string> cross_cell_changes(const NavMesh& before, const NavMesh
         std::set<std::array<uint32_t, 3>> s;
         for (size_t p = 0; p < n.polys.size(); p++)
             for (uint32_t k = 0; k < n.polys[p].vertex_count(); k++) {
+                if ((size_t)n.polys[p].first_index + k >= n.edges.size()) break;
                 const NavEdgePart& e = n.edges[n.polys[p].first_index + k].a;
                 if (e.open() || e.area_index() >= n.adjacent_areas.size()) continue;
                 const uint32_t area = n.adjacent_areas[e.area_index()];
@@ -285,9 +290,12 @@ template <class T> std::vector<T> read_list(const Reader& r, uint64_t ptr) {
     const uint32_t count = r.u32(ptr + 8);
     const uint64_t parts = r.u64(ptr + 0x10);
     const uint32_t nparts = r.u32(ptr + 0x20);
+    if (count > r.resource().system.size() / sizeof(T)) throw Error("ynv: a list claims more items than the file holds");
+    out.reserve(count);
     for (uint32_t p = 0; p < nparts; p++) {
         const uint64_t items = r.u64(parts + 16ull * p);
         const uint32_t n = r.u32(parts + 16ull * p + 8);
+        if (out.size() + n > count) throw Error("ynv: a list's parts hold more items than its header says");   // before the parts are read: they could all name one array
         auto v = r.array<T>(items, n);
         out.insert(out.end(), v.begin(), v.end());
     }
@@ -295,8 +303,12 @@ template <class T> std::vector<T> read_list(const Reader& r, uint64_t ptr) {
     return out;
 }
 
-NavSector read_sector(const Reader& r, uint64_t ptr, int depth) {
+// the game's trees are a few levels of four; a chain of blocks each naming the next as all four children would make
+// 4^depth sectors, so their number is bounded too
+NavSector read_sector(const Reader& r, uint64_t ptr, int depth, size_t& budget) {
     if (depth > 16) throw Error("ynv: sector tree too deep");
+    if (budget == 0) throw Error("ynv: too many sectors");
+    budget--;
     NavSector s;
     s.min = r.at<Vec4>(ptr);
     s.max = r.at<Vec4>(ptr + 16);
@@ -304,7 +316,7 @@ NavSector read_sector(const Reader& r, uint64_t ptr, int depth) {
     const uint64_t data = r.u64(ptr + 0x2C);   // unaligned: right after the 12 byte box
     for (size_t i = 0; i < 4; i++) {
         const uint64_t c = r.u64(ptr + 0x34 + 8 * i);
-        if (c) s.children[i] = std::make_unique<NavSector>(read_sector(r, c, depth + 1));
+        if (c) s.children[i] = std::make_unique<NavSector>(read_sector(r, c, depth + 1, budget));
     }
     if (data) {
         s.has_data = true;
@@ -338,12 +350,19 @@ NavMesh read_ynv(std::span<const uint8_t> file) {
     if (adj > 32) throw Error("ynv: more than 32 adjacent areas");
     n.adjacent_areas = r.array<uint32_t>(root + 0x98, adj);
     n.polys = read_list<NavPoly>(r, r.u64(root + 0x118));
-    if (const uint64_t s = r.u64(root + 0x120)) n.sectors = read_sector(r, s, 0);
+    size_t sector_budget = 1 << 14;
+    if (const uint64_t s = r.u64(root + 0x120)) n.sectors = read_sector(r, s, 0, sector_budget);
     n.portals = r.array<NavPortal>(r.u64(root + 0x128), r.u32(root + 0x14C));
     n.portal_links = r.array<uint16_t>(r.u64(root + 0x130), r.u32(root + 0x150));
     n.area_id = r.u32(root + 0x140);
     n.build = r.u32(root + 0x160);
     if (n.indices.size() != n.edges.size()) throw Error("ynv: indices and edges differ in count");
+    // what the editing and the queries rely on: every polygon's corners lie inside the index list and every index names a vertex
+    for (size_t p = 0; p < n.polys.size(); p++)
+        if ((size_t)n.polys[p].first_index + n.polys[p].vertex_count() > n.indices.size())
+            throw Error("ynv: polygon " + std::to_string(p) + " reaches past the index list");
+    for (uint16_t i : n.indices)
+        if (i >= n.vertices.size()) throw Error("ynv: index " + std::to_string(i) + " names no vertex (" + std::to_string(n.vertices.size()) + ")");
     return n;
 }
 
