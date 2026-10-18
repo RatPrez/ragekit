@@ -259,6 +259,13 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     s.mie_intensity = v("sky_sun_mie_intensity_mult", 0.2f);
     s.sun_disc = rgb("sky_sun_disc_col") * v("sky_sun_hdr");
     s.sun_disc_size = v("sky_sun_disc_size", 2);
+    s.moon_colour = rgb("sky_moon_col") * v("sky_moon_iten", 1);
+    s.moon_size = v("sky_moon_disc_size", 3);
+    {   // the stars come out as the sun goes down (the CPU's fade; the timecycle keeps sky_stars_iten all day)
+        const float sun_z = Environment::sun_disc_at(hour, sun_roll_).z;
+        s.stars = v("sky_stars_iten") * s.hdr * std::clamp(-sun_z * 8.0f, 0.0f, 1.0f);
+    }
+    e.moon_direction = Environment::moon_at(hour, moon_roll_);
     e.sun_shadow_distance = v("dir_shadow_distance_multiplier", 1);
     // the fog
     Fog& f = e.fogs;

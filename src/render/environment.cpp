@@ -8,13 +8,24 @@ constexpr float kPi = 3.14159265f;
 Vec3 rotate_x(Vec3 v, float a) { return {v.x, v.y * std::cos(a) - v.z * std::sin(a), v.y * std::sin(a) + v.z * std::cos(a)}; }
 } // namespace
 
+Vec3 Environment::sun_disc_at(float hour, float sun_roll_deg) {
+    float h = std::fmod(hour, 24.0f);
+    if (h < 0) h += 24;
+    const float day = kPi * (0.5f + (h - 6) / 14);
+    return rotate_x({std::sin(day), -std::cos(day), 0}, sun_roll_deg * kPi / 180);
+}
+
+Vec3 Environment::moon_at(float hour, float moon_roll_deg) {
+    float h = std::fmod(hour, 24.0f);
+    if (h < 0) h += 24;
+    const float night = kPi * ((h > 12 ? h - 7 : h + 17) / 9);
+    return rotate_x({-std::sin(night), 0, -std::cos(night)}, -moon_roll_deg * kPi / 180);
+}
+
 Vec3 Environment::sun_at(float hour, float sun_roll_deg, float moon_roll_deg) {
     float h = std::fmod(hour, 24.0f);
     if (h < 0) h += 24;
-    const float day = kPi * (0.5f + (h - 6) / 14), night = kPi * ((h > 12 ? h - 7 : h + 17) / 9);
-    Vec3 sun = rotate_x({std::sin(day), -std::cos(day), 0}, sun_roll_deg * kPi / 180);
-    Vec3 moon = rotate_x({-std::sin(night), 0, -std::cos(night)}, -moon_roll_deg * kPi / 180);
-    Vec3 d = (h < 5 || h > 21) ? moon : sun;
+    Vec3 d = (h < 5 || h > 21) ? moon_at(h, moon_roll_deg) : sun_disc_at(h, sun_roll_deg);
     if (d.z < 0) d.z = 0;   // the light stays at or above the horizon
     const float l = d.length();
     return l > 0 ? d * (1 / l) : Vec3{0, 0, 1};

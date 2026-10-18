@@ -21,6 +21,9 @@ struct Sky {
     float mie_phase = 0.95f, mie_scatter = 1, mie_intensity = 0.2f;   // sky_sun_miephase / _miescatter / _mie_intensity_mult
     Vec3 sun_disc;                             // sky_sun_disc_col * sky_sun_hdr
     float sun_disc_size = 2;                   // sky_sun_disc_size (degrees)
+    Vec3 moon_colour;                          // sky_moon_col * sky_moon_iten (black: no moon)
+    float moon_size = 3;                       // sky_moon_disc_size (degrees)
+    float stars = 0;                           // sky_stars_iten * sky_hdr, faded in as the sun sets
     /// A plain sky between a horizon and a zenith colour (HDR already), no sun scattering.
     static Sky plain(Vec3 zenith, Vec3 horizon);
 };
@@ -123,6 +126,10 @@ struct Environment {
     /// The sun's path over the day (time.xml's sun_roll; CodeWalker's reading of it): towards the sun at `hour`, the moon at
     /// night.
     static Vec3 sun_at(float hour, float sun_roll_deg = 122, float moon_roll_deg = -122);
+    /// The sun itself and the moon at an hour (below the horizon too).
+    static Vec3 sun_disc_at(float hour, float sun_roll_deg = 122);
+    static Vec3 moon_at(float hour, float moon_roll_deg = -122);
+    Vec3 moon_direction{0, 0, -1};             // towards the moon
 };
 
 /// What a backend shows instead of the lit colour.
