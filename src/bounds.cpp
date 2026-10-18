@@ -187,6 +187,7 @@ void read_geometry(const Reader& r, uint64_t ptr, Bound& b) {
         g.has_octants = true;
         auto counts = r.array<uint32_t>(octants_ptr, 8);
         auto ptrs = r.array<uint64_t>(octant_items_ptr, 8);
+        if (ptrs.size() != 8) throw Error("bound: octant counts without their item lists");
         for (int i = 0; i < 8; i++) g.octants[i] = r.array<uint32_t>(ptrs[i], counts[i]);
     }
     g.materials = r.array<BoundMaterial>(mats_ptr, mats_count);
@@ -225,6 +226,7 @@ void read_composite(const Reader& r, uint64_t ptr, Bound& b, std::map<uint64_t, 
     b.has_child_flags = flags1_ptr != 0 || flags2_ptr != 0;
     b.has_child_transforms2 = tr2_ptr != 0 && tr2_ptr != tr1_ptr;
     if (b.has_child_transforms2) b.child_transforms2 = tr2;
+    if (count && ptrs.empty()) throw Error("bound: a composite of " + std::to_string(count) + " children without a child list");
     for (uint16_t i = 0; i < count; i++) {
         BoundChild ch;
         ch.bound = read_bound(r, ptrs[i], seen);
@@ -239,12 +241,29 @@ void read_composite(const Reader& r, uint64_t ptr, Bound& b, std::map<uint64_t, 
 
 } // namespace
 
+namespace {
+// Composites nest a few levels deep in the game's files. A composite that contains itself is malformed: read with `seen`
+// (shared bounds kept shared) it would become a cycle every later walk recurses round without end, so the bounds being
+// read are kept on a path and a pointer back into it throws; a chain of a thousand composites stops at the depth limit.
+constexpr size_t kMaxBoundDepth = 64;
+thread_local std::vector<uint64_t> t_bound_path;
+struct BoundPathGuard {
+    explicit BoundPathGuard(uint64_t ptr) {
+        if (t_bound_path.size() >= kMaxBoundDepth) throw Error("bound: composites nested more than " + std::to_string(kMaxBoundDepth) + " deep");
+        t_bound_path.push_back(ptr);
+    }
+    ~BoundPathGuard() { t_bound_path.pop_back(); }
+};
+} // namespace
+
 std::shared_ptr<Bound> read_bound(const Reader& r, uint64_t ptr, std::map<uint64_t, std::shared_ptr<Bound>>* seen) {
     if (ptr == 0) return nullptr;
+    if (std::find(t_bound_path.begin(), t_bound_path.end(), ptr) != t_bound_path.end()) throw Error("bound: a composite contains itself");
     if (seen) {
         auto it = seen->find(ptr);
         if (it != seen->end() && it->second) return it->second;
     }
+    BoundPathGuard path(ptr);
     auto b = std::make_shared<Bound>();
     if (seen) (*seen)[ptr] = b;   // before the children: a child pointing back is not read again
     auto c = r.cursor(ptr + 0x10);
@@ -430,7 +449,7 @@ BlockId write_bound(Builder& b, const Bound& bound, std::map<const Bound*, Block
             children = b.alloc(Segment::System, n * 8);
             std::vector<BoundTransform> trs;
             std::vector<AABB> bbs;
-            std::vector<uint32_t> fl1, fl2;
+            std::vector<uint32_t> fl1;
             for (size_t i = 0; i < n; i++) {
                 auto& ch = bound.children[i];
                 if (ch.bound) b.pointer(children, i * 8, write_bound(b, *ch.bound, written));
@@ -438,7 +457,6 @@ BlockId write_bound(Builder& b, const Bound& bound, std::map<const Bound*, Block
                 bbs.push_back(ch.bbox);
                 fl1.push_back(ch.flags1); fl1.push_back(ch.flags2);
             }
-            fl2 = fl1;
             auto pack_transforms = [](const std::vector<BoundTransform>& v) { // xml: see BoundTransform::to_file
                 std::vector<std::array<uint8_t, 64>> out(v.size());
                 for (size_t i = 0; i < v.size(); i++) v[i].to_file(out[i].data());
@@ -447,7 +465,7 @@ BlockId write_bound(Builder& b, const Bound& bound, std::map<const Bound*, Block
             tr1 = b.array(Segment::System, pack_transforms(trs));
             tr2 = bound.has_child_transforms2 && bound.child_transforms2.size() == n ? b.array(Segment::System, pack_transforms(bound.child_transforms2)) : tr1;
             boxes = b.array(Segment::System, bbs);
-            if (bound.has_child_flags) { f1 = b.array(Segment::System, fl1); f2 = b.array(Segment::System, fl2); }
+            if (bound.has_child_flags) { f1 = b.array(Segment::System, fl1); f2 = b.array(Segment::System, fl1); }
         }
         BlockId bvh = bound.composite_bvh ? write_bvh(b, *bound.composite_bvh) : BlockId{};
         w.ptr(children);
@@ -658,6 +676,10 @@ void Bound::finalize() {
     }
     if (!geometry) return;
     auto& g = *geometry;
+    for (size_t i = 0; i < g.polygons.size(); i++)
+        for (int k = 0; k < g.polygons[i].vertex_count(); k++)
+            if (g.polygons[i].vertex(k) >= g.vertices.size())
+                throw Error("bound: polygon " + std::to_string(i) + " names vertex " + std::to_string(g.polygons[i].vertex(k)) + " of " + std::to_string(g.vertices.size()));
     // box and sphere around the vertices (relative to center)
     Vec3 mn{INFINITY, INFINITY, INFINITY}, mx{-INFINITY, -INFINITY, -INFINITY};
     for (auto& v : g.vertices) { mn = vmin(mn, v); mx = vmax(mx, v); }
