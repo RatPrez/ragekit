@@ -65,6 +65,8 @@ Light make_light(const rk::Light& a, const Mat4& m, uint32_t seed) {
     l.volume_outer_intensity = a.volume_outer_intensity;
     l.volume_outer_exponent = a.volume_outer_exponent;
     l.projected_texture = a.projected_texture_hash;
+    l.shadow_near_clip = a.shadow_near_clip;
+    l.shadow_blur = a.shadow_blur;
     l.seed = seed;
     return l;
 }

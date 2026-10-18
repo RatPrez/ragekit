@@ -68,11 +68,17 @@ struct Light {
     Vec3 volume_outer_colour{1, 1, 1};
     float volume_outer_intensity = 0, volume_outer_exponent = 1;
     uint32_t projected_texture = 0;    // LightTextureProjection: the texture's hash
+    float shadow_near_clip = 0.01f;    // what the shadow map leaves out near the light
+    uint8_t shadow_blur = 0;
     uint32_t seed = 0;                 // varies the flashiness patterns between lights
 
     bool has(LightFlag f) const { return (flags & f) != 0; }
     /// Whether it lights surfaces (not just a corona).
     bool lights_surfaces() const { return !has(LightCoronaOnly) && intensity > 0 && range > 0; }
+    /// Whether it casts shadows (point and spot lights: capsule.fxc's shadow techniques sample no shadow map).
+    bool casts_shadows() const {
+        return (flags & (LightCastShadows | LightCastStaticShadows | LightCastDynamicShadows)) != 0 && type != LightType::Capsule;
+    }
 };
 
 /// An attribute of a drawable or fragment, placed by `placement` (its bone's matrix; row vectors).
