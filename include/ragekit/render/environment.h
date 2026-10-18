@@ -28,7 +28,13 @@ struct Environment {
     Vec3 artificial_int_down{0.3f, 0.3f, 0.3f}, artificial_int_up{0.5f, 0.5f, 0.5f};
     float ambient_wrap = 0.3f;                 // light_amb_down_wrap
     Vec3 directional_ambient{0, 0, 0};         // along the sun, times sat(N.L)
-    float reflection = 1;                      // the spec-weighted reflection term (the sky stands in for the cube map)
+    float reflection = 1;                      // scales the spec-weighted reflection term
+    // the reflection map (the scene around the camera, two paraboloids); without it the sky stands in
+    bool reflections = true;
+    float reflection_interior_amb = 2, reflection_exterior_amb = 2;   // reflection_tweak_*_amb: the map's artificial ambient
+    float reflection_emissive = 2;             // reflection_tweak_emissive: its emissive
+    float reflection_directional = 0.3f;       // reflection_tweak_directional: its sun
+    float reflection_hdr = 1;                  // reflection_hdr_mult
 
     // ---- the backdrop and its reflection
     Vec3 sky_zenith{3.0f, 4.2f, 6.5f}, sky_horizon{5.0f, 5.5f, 6.0f};
@@ -77,6 +83,6 @@ struct Environment {
 };
 
 /// What a backend shows instead of the lit colour.
-enum class DebugView : int { Lit = 0, Albedo, Normals, NormalMap, SpecMap, UvCheck, Colour0, Colour1, Alpha };
+enum class DebugView : int { Lit = 0, Albedo, Normals, NormalMap, SpecMap, UvCheck, Colour0, Colour1, Alpha, Reflection };
 
 } // namespace rk::render

@@ -229,6 +229,11 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     e.shift_colour = rgb("postfx_shift_col");
     e.shift_cutoff = v("postfx_shift_cutoff");
     e.saturation = v("postfx_desaturation", 1);   // PS_Composite: lum + Desaturate * (c - lum); 1 in every weather
+    e.reflection_interior_amb = v("reflection_tweak_interior_amb", 2);
+    e.reflection_exterior_amb = v("reflection_tweak_exterior_amb", 2);
+    e.reflection_emissive = v("reflection_tweak_emissive", 2);
+    e.reflection_directional = v("reflection_tweak_directional", 0.3f);
+    e.reflection_hdr = v("reflection_hdr_mult", 1);
     e.bloom_threshold = std::max(v("postfx_bright_pass_thresh", 0.4f), setting("bloom.threshold.min", 0.4f));
     e.bloom_threshold_width = v("postfx_bright_pass_thresh_width", 1);
     e.bloom_intensity = std::min(v("postfx_intensity_bloom", 0.2f), setting("misc.BloomIntensityClamp.HD", 10));
