@@ -209,6 +209,9 @@ Environment Timecycle::environment(std::string_view weather_in, float hour, std:
     e.exposure_curve[0] = setting("Exposure.curve.scale", -106.2f);
     e.exposure_curve[1] = setting("Exposure.curve.power", 0.007f);
     e.exposure_curve[2] = setting("Exposure.curve.offset", 104.7f);
+    e.adapt_min = setting("Adaptation.min.step.size", 0.15f);
+    e.adapt_max = setting("Adaptation.max.step.size", 3);
+    e.adapt_mult = setting("Adaptation.step.size.mult", 1.5f);
     // the tone map: visualsettings.dat's unless the weather overrides it
     auto curve = [&](const char* which, const char* suffix, float& exposure_out) {
         Tonemap t;

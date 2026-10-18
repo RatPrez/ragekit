@@ -91,6 +91,10 @@ struct Environment {
     float exposure = 0;                        // postfx_exposure: added to the automatic EV; the EV itself when not automatic
     float exposure_min = -3.5f, exposure_max = 5;
     float exposure_curve[3] = {-106.2f, 0.007f, 104.7f};   // visualsettings.dat Exposure.curve.scale / power / offset
+    // adaptation: the EV moves towards the measured one by |difference| * mult per second, at least min, at most max
+    // (visualsettings.dat Adaptation.*); a backend's first frame takes the measured EV at once
+    bool adaptation = true;
+    float adapt_min = 0.15f, adapt_max = 3, adapt_mult = 1.5f;
     Tonemap tonemap_dark, tonemap_bright;      // blended by EV between the two exposures below
     float tonemap_exposure_dark = 3, tonemap_exposure_bright = -0.5f;
     Vec3 correct_colour{1, 1, 1}, shift_colour{1, 1, 1};   // postfx_correct_col / postfx_shift_col
