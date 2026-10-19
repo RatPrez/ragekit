@@ -79,6 +79,13 @@ int main() {
     check("alpha ramp", alpha, TextureFormat::DXT5, 2.0, 2.0);
     check("alpha cutout", cut, TextureFormat::DXT5, 2.0, 1.0);
     check("alpha cutout dxt3", cut, TextureFormat::DXT3, 2.0, 1.0);
+    // BC7 (mode 6 only): better than DXT1 / DXT5 on everything but blocks of many unrelated colours
+    check("red-green ramp bc7", diag, TextureFormat::BC7, 3.0);
+    check("blue-orange ramp bc7", anti, TextureFormat::BC7, 3.0);
+    check("gradient bc7", grad, TextureFormat::BC7, 1.5);
+    check("warm noise bc7", noise, TextureFormat::BC7, 9.0);
+    check("alpha ramp bc7", alpha, TextureFormat::BC7, 1.0, 2.0);
+    check("alpha cutout bc7", cut, TextureFormat::BC7, 1.0, 1.0);
     std::printf("%s\n", fails ? "FAILED" : "all ok");
     return fails ? 1 : 0;
 }

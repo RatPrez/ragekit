@@ -498,6 +498,117 @@ void encode_bc4_block(const uint8_t v[16], uint8_t out[8]) {
     for (int i = 0; i < 6; i++) out[2 + i] = (uint8_t)(bits >> (8 * i));
 }
 
+// BC7 in mode 6 alone: one subset, RGBA endpoints of 7 bits and a p-bit each, 16 4-bit indices. The endpoints start at the
+// ends of the block's principal axis (RGBA), are refined by least squares on the indices they give, and every p-bit
+// pair is tried; the best by squared error wins. Smooth blocks come out near BC7's best, sharp multi-colour ones worse
+// than the partitioned modes would give.
+int bc7_mode6_error(const uint8_t px[16][4], const int e[2][4], uint8_t idx[16]) {
+    static const int w[16] = {0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64};
+    int pal[16][4];
+    for (int i = 0; i < 16; i++)
+        for (int c = 0; c < 4; c++) pal[i][c] = ((64 - w[i]) * e[0][c] + w[i] * e[1][c] + 32) >> 6;
+    int total = 0;
+    for (int p = 0; p < 16; p++) {
+        int best = INT32_MAX, bi = 0;
+        for (int i = 0; i < 16; i++) {
+            int d = 0;
+            for (int c = 0; c < 4; c++) { const int t = px[p][c] - pal[i][c]; d += t * t; }
+            if (d < best) { best = d; bi = i; }
+        }
+        idx[p] = (uint8_t)bi;
+        total += best;
+    }
+    return total;
+}
+
+void encode_bc7_block(const uint8_t px[16][4], uint8_t out[16]) {
+    static const int w[16] = {0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64};
+    // principal axis of the 16 RGBA points (power iteration on the covariance)
+    double mean[4] = {};
+    for (int p = 0; p < 16; p++) for (int c = 0; c < 4; c++) mean[c] += px[p][c] / 16.0;
+    double cov[4][4] = {};
+    for (int p = 0; p < 16; p++)
+        for (int a = 0; a < 4; a++) for (int b = 0; b < 4; b++) cov[a][b] += (px[p][a] - mean[a]) * (px[p][b] - mean[b]);
+    // start from the covariance's longest column (a fixed start such as (1, 1, 1, 1) is orthogonal to a red-green axis)
+    double axis[4] = {1, 1, 1, 1}, longest = 0;
+    for (int b = 0; b < 4; b++) {
+        double l = 0;
+        for (int a = 0; a < 4; a++) l += cov[a][b] * cov[a][b];
+        if (l > longest) { longest = l; for (int a = 0; a < 4; a++) axis[a] = cov[a][b]; }
+    }
+    for (int it = 0; it < 12; it++) {
+        double n[4] = {}, len = 0;
+        for (int a = 0; a < 4; a++) { for (int b = 0; b < 4; b++) n[a] += cov[a][b] * axis[b]; len += n[a] * n[a]; }
+        if (len < 1e-12) break;
+        len = std::sqrt(len);
+        for (int a = 0; a < 4; a++) axis[a] = n[a] / len;
+    }
+    double lo = 1e30, hi = -1e30;
+    for (int p = 0; p < 16; p++) {
+        double t = 0;
+        for (int c = 0; c < 4; c++) t += (px[p][c] - mean[c]) * axis[c];
+        lo = std::min(lo, t); hi = std::max(hi, t);
+    }
+    double ends[2][4];
+    for (int c = 0; c < 4; c++) { ends[0][c] = mean[c] + axis[c] * lo; ends[1][c] = mean[c] + axis[c] * hi; }
+
+    int best_err = INT32_MAX, best_q[2][4] = {}, best_p[2] = {};
+    uint8_t best_idx[16] = {};
+    for (int refine = 0; refine < 3; refine++) {
+        for (int pb = 0; pb < 4; pb++) {
+            const int pbit[2] = {pb & 1, pb >> 1};
+            int q[2][4], e[2][4];
+            for (int k = 0; k < 2; k++)
+                for (int c = 0; c < 4; c++) {
+                    // the 7-bit value whose (v << 1 | p) is nearest
+                    int v = (int)std::lround((ends[k][c] - pbit[k]) / 2.0);
+                    v = std::clamp(v, 0, 127);
+                    q[k][c] = v;
+                    e[k][c] = v << 1 | pbit[k];
+                }
+            uint8_t idx[16];
+            const int err = bc7_mode6_error(px, e, idx);
+            if (err < best_err) {
+                best_err = err;
+                std::memcpy(best_q, q, sizeof q);
+                best_p[0] = pbit[0]; best_p[1] = pbit[1];
+                std::memcpy(best_idx, idx, 16);
+            }
+        }
+        if (best_err == 0) break;
+        // least squares endpoints for the best indices: minimise sum |(1 - t) e0 + t e1 - x|^2 over the 16 pixels
+        double a = 0, b = 0, cc = 0, r0[4] = {}, r1[4] = {};
+        for (int p = 0; p < 16; p++) {
+            const double t = w[best_idx[p]] / 64.0;
+            a += (1 - t) * (1 - t); b += (1 - t) * t; cc += t * t;
+            for (int c = 0; c < 4; c++) { r0[c] += (1 - t) * px[p][c]; r1[c] += t * px[p][c]; }
+        }
+        const double det = a * cc - b * b;
+        if (std::fabs(det) < 1e-9) break;
+        for (int c = 0; c < 4; c++) {
+            ends[0][c] = std::clamp((cc * r0[c] - b * r1[c]) / det, 0.0, 255.0);
+            ends[1][c] = std::clamp((a * r1[c] - b * r0[c]) / det, 0.0, 255.0);
+        }
+    }
+    // the anchor (pixel 0) must have an index under 8: else swap the endpoints and invert every index
+    if (best_idx[0] >= 8) {
+        for (int c = 0; c < 4; c++) std::swap(best_q[0][c], best_q[1][c]);
+        std::swap(best_p[0], best_p[1]);
+        for (int p = 0; p < 16; p++) best_idx[p] = (uint8_t)(15 - best_idx[p]);
+    }
+    std::memset(out, 0, 16);
+    size_t bit = 0;
+    auto put = [&](uint32_t v, int n) {
+        for (int i = 0; i < n; i++, bit++) if (v >> i & 1) out[bit >> 3] |= (uint8_t)(1 << (bit & 7));
+    };
+    put(1u << 6, 7);   // mode 6
+    for (int c = 0; c < 4; c++) { put((uint32_t)best_q[0][c], 7); put((uint32_t)best_q[1][c], 7); }
+    put((uint32_t)best_p[0], 1);
+    put((uint32_t)best_p[1], 1);
+    put(best_idx[0], 3);
+    for (int p = 1; p < 16; p++) put(best_idx[p], 4);
+}
+
 void fetch_block(const Image& img, uint32_t bx, uint32_t by, uint8_t px[16][4]) {
     for (int i = 0; i < 16; i++) {
         uint32_t x = std::min(bx * 4 + (i & 3), img.width - 1), y = std::min(by * 4 + (i >> 2), img.height - 1);
@@ -537,6 +648,7 @@ Bytes encode_level(const Image& img, TextureFormat f) {
                         for (int i = 0; i < 16; i++) ch[i] = px[i][1];
                         encode_bc4_block(ch, o + 8);
                         break;
+                    case TextureFormat::BC7: encode_bc7_block(px, o); break;
                     default: throw Error(std::string("cannot encode texture format ") + texture_format_name(f));
                 }
             }

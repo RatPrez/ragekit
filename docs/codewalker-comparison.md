@@ -19,7 +19,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 
 | Format | CodeWalker | ragekit | Gap |
 |---|---|---|---|
-| .ytd texture dictionary | yes + XML/DDS | **yes** + DDS/PNG; decodes every DXT/BC/uncompressed format; encodes DXT1/5, BC4/5 and uncompressed; mips; **XML export** | BC7/BC6H encode; XML import |
+| .ytd texture dictionary | yes + XML/DDS | **yes** + DDS/PNG; decodes every DXT/BC/uncompressed format; encodes DXT1/3/5, BC4/5, BC7 (mode 6) and uncompressed: every format of the game; mips; **XML export** | a BC7 encoder using all its modes; XML import |
 | .ydr drawable | yes + XML | **yes** (shaders and parameters, textures, skeleton, joints, LODs, lights, embedded bounds); **XML export**; the shader database names every parameter | XML import |
 | .ydd drawable dictionary | yes + XML | **yes**; XML export | XML import |
 | .yft fragment | yes + XML | **yes** (drawables, physics LODs with groups, children, archetypes, bounds and joints, glass, vehicle glass, lights, environment cloth; every tenth game file round-trips field for field) | XML |

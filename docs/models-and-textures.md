@@ -28,8 +28,10 @@ txd.add(mine);
 rsc::write_file("props.ytd", write_ytd(txd));
 ```
 
-`encode_texture` writes DXT1/5, BC4/5 (principal-axis endpoints with a least-squares refit; `rk_texenc_test` holds the
-RMS error to limits) and the uncompressed formats, with the mip chain down to 1x1 unless told otherwise; `read_dds`
+`encode_texture` writes DXT1/3/5, BC4/5 (principal-axis endpoints with a least-squares refit; `rk_texenc_test` holds the
+RMS error to limits), BC7 (mode 6 only: one subset, RGBA endpoints with p-bits, 16 levels; on the test images 0.7 to
+3.5 RMS against DXT1's 0.8 to 13.8; an opaque block's alpha can come out 254, the p-bit being shared) and the
+uncompressed formats: every format the game's textures use (no game texture is BC6H), with the mip chain down to 1x1 unless told otherwise; `read_dds`
 takes a DDS file as a texture.
 
 ## Drawables

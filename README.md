@@ -26,7 +26,7 @@ third_party/clipper2  polygon clipping for the navmesh builder (Boost licence)
 |---|---|---|---|
 | RSC7 resources | yes | yes | the container of every streamed asset; its own page layout (`rsc.h`) |
 | GTA V Enhanced | yes | yes | the gen9 .ytd/.ydr/.ydd/.yft/.ypt, read and written alongside Legacy's; conversion both ways ([docs/enhanced.md](docs/enhanced.md)) |
-| .ytd textures | yes | yes | every DXT/BC/uncompressed format decoded to RGBA; DXT1/5, BC4/5 and uncompressed encoded; DDS and PNG |
+| .ytd textures | yes | yes | every DXT/BC/uncompressed format decoded to RGBA; DXT1/3/5, BC4/5, BC7 and uncompressed encoded; DDS and PNG |
 | .ydr drawables, .ydd dictionaries | yes | yes | shaders, textures, skeleton, joints, LODs, lights, embedded collision |
 | .ybn collision | yes | yes | every bound type, BVH read and build, meshes from triangles |
 | .yft fragments | yes | yes | vehicles, props, ped ragdolls: drawables, physics LODs (groups, children, archetypes, bounds, joints), glass, vehicle glass, lights, cloth |
