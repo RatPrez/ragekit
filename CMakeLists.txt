@@ -63,6 +63,7 @@ add_library(ragekit STATIC
     src/graph.cpp
     src/clip.cpp
     src/awc.cpp
+    src/materials.cpp
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c
@@ -139,6 +140,8 @@ if (RAGEKIT_BUILD_TESTS)
     target_link_libraries(rk_gltf_test PRIVATE ragekit)
     add_executable(rk_bench tests/bench.cpp)   # timings of the hot paths over the game install (not a test)
     target_link_libraries(rk_bench PRIVATE ragekit)
+    add_executable(rk_materials_test tests/materials_test.cpp)   # collision material names and materials.dat
+    target_link_libraries(rk_materials_test PRIVATE ragekit)
     add_executable(rk_unknowns tests/unknowns.cpp)   # statistics of unnamed fields over the game install (evidence for docs)
     target_link_libraries(rk_unknowns PRIVATE ragekit)
     target_include_directories(rk_unknowns PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

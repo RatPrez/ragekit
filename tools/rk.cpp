@@ -91,8 +91,8 @@ static void print_drawable(const Drawable& d, bool verbose) {
 
 static void print_bound(const Bound& b, int depth) {
     std::string ind((size_t)depth * 2, ' ');
-    std::printf("%s%s mat %u room %u box (%.2f %.2f %.2f)..(%.2f %.2f %.2f) margin %.3f", ind.c_str(), bound_type_name(b.type), b.material_index,
-                b.room_id(), b.box_min.x, b.box_min.y, b.box_min.z, b.box_max.x, b.box_max.y, b.box_max.z, b.margin);
+    std::printf("%s%s mat %u %s room %u box (%.2f %.2f %.2f)..(%.2f %.2f %.2f) margin %.3f", ind.c_str(), bound_type_name(b.type), b.material_index,
+                material_name(b.material_index), b.room_id(), b.box_min.x, b.box_min.y, b.box_min.z, b.box_max.x, b.box_max.y, b.box_max.z, b.margin);
     if (b.geometry) {
         auto& g = *b.geometry;
         size_t tris = 0;

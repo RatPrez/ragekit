@@ -67,6 +67,12 @@ Every bound type reads and writes: composites, geometries with and without a BVH
 cylinders, discs. `Bound::finalize` recomputes what is derived (boxes, sphere, quantum, edges, materials table, shrunk
 vertices, octants, BVH) after an edit. Materials carry the room id an interior's collision needs.
 
+A material's index is a row of `materials.dat` (`common.rpf/data/materials/materials.dat`, the same 213 rows in both
+editions). `materials.h` names them: `material_name(i)` and `material_index(name)` from a built-in table of those names
+(`tools/gen_material_names.py` makes it), and `read_materials_dat` / `load_materials(gi)` for every column of the file
+(friction, density, flags such as SHOOT_THRU) from the install. `rk info` prints a bound's material by name;
+`rk_materials_test` checks the table against the install.
+
 ## Fragments
 
 A `.yft` is a vehicle, a breakable prop or a ped's ragdoll: a drawable (some also have a list of further drawables and a

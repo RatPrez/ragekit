@@ -36,3 +36,4 @@
 #include "graph.h"
 #include "clip.h"
 #include "awc.h"
+#include "materials.h"
