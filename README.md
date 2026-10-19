@@ -39,6 +39,9 @@ third_party/clipper2  polygon clipping for the navmesh builder (Boost licence)
 | XML data files (.meta) | yes | yes | vehicles, carcols, carvariations, handling, vehiclelayouts, peds, pedalternatevariations, content.xml ... |
 | .rel audio data | yes | yes | byte for byte; the dat151 items an interior needs; interior audio occlusion files |
 | .gxt2 text tables | yes | yes | byte for byte on every game file ([docs/other-formats.md](docs/other-formats.md)) |
+| .ycd clip dictionaries | yes | yes | clips, animations and tracks; every structure kept as read, the channel data raw |
+| .awc audio containers | yes | yes | byte for byte; decrypted, PCM and ADPCM decoded to .wav |
+| .ynd path nodes, .yvr / .ywr recordings | yes | yes | every game file |
 | RPF7 archives | yes | yes | AES, NG, OPEN and plain; nested archives; writes all four, NG as the game encrypts it; Legacy and Enhanced alike |
 | CodeWalker XML | no | yes | what CodeWalker's "Export XML" writes for .ydr/.ydd/.ybn/.ytd, which CodeWalker and Sollumz import |
 | glTF 2.0 | no | yes | .glb with textures |
@@ -132,7 +135,7 @@ same CodeWalker XML. These tests do not run the game itself. See [docs/testing.m
 ## Not done yet
 
 - Typed models for the common PSO files (carcols, carvariations, peds ...).
-- Animations (.ycd), path nodes and the other formats [docs/codewalker-comparison.md](docs/codewalker-comparison.md)
+- Decoding animation channels, and the other formats [docs/codewalker-comparison.md](docs/codewalker-comparison.md)
   lists as gaps.
 
 ## AI usage

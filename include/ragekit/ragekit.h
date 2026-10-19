@@ -35,3 +35,4 @@
 #include "paths.h"
 #include "graph.h"
 #include "clip.h"
+#include "awc.h"

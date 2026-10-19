@@ -80,6 +80,7 @@ RpfKeys RpfKeys::load(const std::string& folder) {
         std::memcpy(k.ng_tables.data(), t.data(), t.size());
     }
     k.hash_lut = read_all(dir + "gtav_hash_lut.dat");
+    k.awc = read_all(dir + "gtav_awc_key.dat");
     return k;
 }
 
@@ -89,6 +90,7 @@ void RpfKeys::save(const std::string& folder) const {
     if (!ng_keys.empty()) write_all(dir + "gtav_ng_key.dat", ng_keys.data(), ng_keys.size());
     if (!ng_tables.empty()) write_all(dir + "gtav_ng_decrypt_tables.dat", ng_tables.data(), ng_tables.size() * 4);
     if (!hash_lut.empty()) write_all(dir + "gtav_hash_lut.dat", hash_lut.data(), hash_lut.size());
+    if (has_awc()) write_all(dir + "gtav_awc_key.dat", awc.data(), awc.size());
 }
 
 namespace {
@@ -143,6 +145,7 @@ bool decode_magic(const Bytes& magic, RpfKeys& k) {
     k.ng_tables.resize(17 * 16 * 256);
     std::memcpy(k.ng_tables.data(), b.data() + 27472, 278528);
     k.hash_lut.assign(b.begin() + 27472 + 278528, b.begin() + 27472 + 278528 + 256);
+    if (b.size() >= 27472 + 278528 + 256 + 16) k.awc.assign(b.begin() + 27472 + 278528 + 256, b.begin() + 27472 + 278528 + 256 + 16);
     return true;
 }
 } // namespace

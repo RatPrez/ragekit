@@ -929,6 +929,8 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
     const Game game = game_of_file(ext, file);
     if (ext == ".rel") return test_rel(label, file);
     if (ext == ".gxt2") return test_exact(label, file, "text table", [](const Bytes& f) { return write_gxt2(read_gxt2(f)); });
+    if (ext == ".awc" && !is_awc(file)) { g_untested = true; return true; }
+    if (ext == ".awc") return test_exact(label, file, "audio container", [](const Bytes& f) { const AwcFile a = read_awc(f); (void)awc_decode(a); return write_awc(a); });
     if ((ext == ".meta" || ext == ".xml") && !is_rbf(file) && !is_pso(file)) {
         // XML data files (vehicles.meta, carcols, handling, peds ...): parse -> write -> parse must give the same document
         try {
@@ -1167,7 +1169,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1194,6 +1196,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     if (ext == ".rel" || ext.rfind(".dat", 0) == 0 && ext.size() > 4) { (void)read_rel(file); return true; }
     if (ext == ".fxc") { (void)read_fxc(file); return true; }
     if (ext == ".gxt2") { (void)read_gxt2(file); return true; }
+    if (ext == ".awc") { if (!is_awc(file)) return false; (void)awc_decode(read_awc(file)); return true; }
     if (ext == ".sps") { (void)read_sps(std::string_view((const char*)file.data(), file.size()), name); return true; }
     if (ext == ".meta" || ext == ".xml") { (void)parse_xml(std::string_view((const char*)file.data(), file.size())); return true; }
     if (!rsc::Resource::is_resource(file)) return false;

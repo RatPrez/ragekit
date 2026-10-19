@@ -267,6 +267,20 @@ static int cmd_info(const std::string& path, bool verbose) {
         if (!verbose && t.entries.size() > 20) std::printf("  ... (-v lists all)\n");
         return 0;
     }
+    if (ext_of(path) == ".awc") {
+        const AwcFile a = read_awc(file);
+        std::printf("Audio container: version %u, flags 0x%04X%s, %zu streams\n", a.version, a.flags, a.whole_file_encrypted ? ", encrypted" : "", a.streams.size());
+        for (const AwcStream& s : a.streams) {
+            std::printf("  stream %s:", hash_name(s.id).c_str());
+            for (const AwcChunk& c : s.chunks) std::printf(" %02X@%u+%zu", c.type, c.offset, c.data.size());
+            std::printf("\n");
+        }
+        for (const AwcAudio& s : awc_decode(a))
+            std::printf("  sound %s: %u samples at %u Hz (%.2f s), %s\n", hash_name(s.id).c_str(), s.samples, s.sample_rate,
+                        s.sample_rate ? (double)s.samples / s.sample_rate : 0.0,
+                        s.codec == 4 ? "ADPCM" : s.codec == 0 ? "PCM" : ("codec " + std::to_string(s.codec) + ", not decoded").c_str());
+        return 0;
+    }
     if (!rsc::Resource::is_resource(file)) { std::printf("%s: not an RSC7 resource\n", path.c_str()); return 1; }
     print_resource_header(file, ext_of(path));
     std::string ext = ext_of(path);
@@ -397,6 +411,7 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
     const char* exact = nullptr;
     if (is_pso(file)) { written = write_pso(read_pso(file)); exact = "PSO"; }   // binary .ymt / .ypdb
     else if (is_gxt2(file)) { written = write_gxt2(read_gxt2(file)); exact = "text table"; }
+    else if (ext == ".awc") { written = write_awc(read_awc(file)); exact = "audio container"; }
     if (exact) {
         rsc::write_file(out, written);
         std::printf("%s: %s in %zu bytes -> out %zu bytes (%s)\n", fs::path(in).filename().string().c_str(), exact, file.size(), written.size(), written == file ? "identical" : "DIFFERENT");
@@ -1060,6 +1075,17 @@ int main(int argc, char** argv) {
         if (cmd == "ymf-make" && args.size() >= 4) return cmd_ymf_make(args);
         if (cmd == "fxc" && args.size() == 1) return cmd_fxc(args[0]);
         if (cmd == "hex" && !args.empty()) return cmd_hex(args);
+        if (cmd == "awc" && args.size() == 3 && args[0] == "wav") {   // rk awc wav <file.awc> <dir>: every sound as a .wav
+            fs::create_directories(args[2]);
+            const auto sounds = awc_decode(read_awc(rsc::read_file(args[1])));
+            for (const AwcAudio& s : sounds) {
+                if (!s.decoded()) { std::printf("%s: codec %u, not decoded\n", hash_name(s.id).c_str(), s.codec); continue; }
+                const std::string out = (fs::path(args[2]) / (hash_name(s.id) + ".wav")).string();
+                rsc::write_file(out, awc_wav(s));
+                std::printf("%s (%u samples, %u Hz)\n", out.c_str(), s.samples, s.sample_rate);
+            }
+            return 0;
+        }
         if (cmd == "info" && args.size() == 1) return cmd_info(args[0], verbose);
         if (cmd == "dump" && args.size() == 1) return cmd_info(args[0], true);
         if (cmd == "roundtrip" && args.size() == 2) return cmd_roundtrip(args[0], args[1]);
@@ -1082,7 +1108,7 @@ int main(int argc, char** argv) {
             if (rc != 2) return rc;
         }
         std::printf("usage (any command takes --enhanced or --legacy: the edition written and the install the index opens; default legacy):\n"
-                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk hex <file> [sys|gfx] [offset] [bytes]\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
+                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk hex <file> [sys|gfx] [offset] [bytes]\n  rk awc wav <file.awc> <dir>\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
                     "  rk gltf <ydr|ydd|yft> <out.glb> [textures.ytd ...] [--all-lods] [--no-textures]\n"
                     "  rk rpf ls <file.rpf> [path] [-r] [--nested] [--tsv [--hash]]\n  rk rpf cat <file.rpf> <entry path> <out>\n  rk rpf extract <file.rpf> <out dir> [path] [--nested]\n"
                     "  rk rpf keys <GTA5.exe> [key folder] [--magic <magic.dat>]\n  rk rpf pack <dir> <out.rpf> [--aes | --ng]\n  rk rpf add <rpf> <entry path> <file>\n"

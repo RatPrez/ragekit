@@ -105,3 +105,30 @@ Every Legacy and Enhanced dictionary reads back with the same graph but four: `x
 {exterior,interior}/des_{bridge,setpiece,fib_ceiling2,hosp_ceil}.rpf` are AES-encrypted archives of older resources
 (ycd 43, ydr 164, ybd 40) whose streams inflate neither after AES nor NG decryption, in ragekit or in CodeWalker (the
 same bytes come out of both); Enhanced's copies read.
+
+## Audio containers (`awc.h`)
+
+`.awc` files (7,742 in Legacy, 7,760 in Enhanced) hold the game's sounds: sound effects, speech, music and radio. A file
+is a table and the chunks it points at, per stream: a format chunk (samples, sample rate, codec), the data, and seek
+tables, markers, peaks, granular grains and loops. A multi-channel file (flag 4) has one stream whose stream format
+chunk lists the channels and whose data is interleaved in blocks; the other streams name the channels.
+
+```
+"ADAT" version:u16 flags:u16 streams:u32 data_offset:u32  [first chunk index:u16 per stream, flag 1]
+id:29 | chunks:3 (u32 per stream)   type:8 | size:28 | offset:28 (u64 per chunk)   the chunks
+```
+
+`read_awc` keeps every chunk as stored and its offset, so `write_awc` gives the file again byte for byte (the gaps
+between chunks are zero in every game file); `AwcFile::pack` lays the chunks out anew after an edit, in the order
+and alignment the game's files use. Encrypted files use Rockstar's XXTEA (the reference algorithm with each key word
+xored with 0x7B3A207F) with the 16-byte key that follows the hash table in CodeWalker's `magic.dat`; `rk rpf keys`
+saves it as `gtav_awc_key.dat` with the other keys (`RpfKeys::awc`). A whole file can be encrypted (its magic does not
+read as stored), the data chunk of a single-channel file (flag 2) or each block of a multi-channel file (flag 8).
+
+`awc_decode` decrypts and decodes every sound to 16-bit PCM: PCM (codec 0) and the game's IMA ADPCM (codec 4: blocks of
+2,048 bytes, each a step index, a predictor and 2,044 bytes of nibbles); `awc_wav` makes a .wav of one. A sound of
+another codec is listed without samples: Legacy has one (codec 5, `vw_counterfeit_chips.awc`), Enhanced stores 2,538
+multi-channel files and 1,664 others in codec 7, whose blocks are laid out otherwise (not decoded; GUESS a compressed
+codec). Enhanced's `update2.rpf/common/shaders/fxdb/sga_win32_60_final*.awc` are shader caches with the extension, not
+audio (`is_awc` is false). `rk info file.awc` lists the streams, chunks and sounds; `rk awc wav file.awc dir` writes
+the sounds.

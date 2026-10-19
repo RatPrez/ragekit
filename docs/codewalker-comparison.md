@@ -24,16 +24,16 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | .ydd drawable dictionary | yes + XML | **yes**; XML export | XML import |
 | .yft fragment | yes + XML | **yes** (drawables, physics LODs with groups, children, archetypes, bounds and joints, glass, vehicle glass, lights, environment cloth; every tenth game file round-trips field for field) | XML |
 | .ybn collision | yes + XML | **yes** (every bound type, BVH read and build, geometry builder, materials with room id); XML export | XML import; ragekit builds its own BVH trees |
-| .ycd clip dictionary (animations) | yes + XML | - | everything: clips, animations, channel packing, sequences |
+| .ycd clip dictionary (animations) | yes + XML | **yes** (`clip.h`: every structure kept as read and written back; clips, animations, tracks and the raw sequences through views; 24,840 of 24,844 Legacy and all 25,961 Enhanced files) | decoding the channels; building new clips; XML |
 | .ynv navmesh | yes + XML + builder | **yes** (every stored value kept, so the game's cells come back exactly), polygon editing, rebuilding an area from collision in place (numbers kept, the neighbouring cells untouched) | a whole-cell builder; XML |
-| .ynd path nodes (traffic) | yes + XML + builder | - | everything |
+| .ynd path nodes (traffic) | yes + XML + builder | **yes** (`paths.h`: nodes, links, junctions and height maps as stored; every game file) | a builder; XML |
 | .yed expression dictionary | yes + XML | - | everything |
 | .yld cloth dictionary | yes + XML | **yes** (character cloth: controller, bridge, verlet cloth, skinning, capsule bounds); all 61 game files round-trip, every structure byte the same but vtables | XML |
 | .yfd frame filter dictionary | yes + XML | - | everything |
 | .ypdb pose matcher | yes + XML | PSO container only | typed model |
 | .ypt particle effects | read (+ partial XML) | **yes** (textures, drawables; every rule, behaviour, domain, keyframe, evolution and shader variable kept as read and written back; both editions; all 2,784 game files round-trip) | typed fields beyond names; XML |
-| .yvr vehicle record | yes + XML | - | everything |
-| .ywr waypoint record | yes + XML | - | everything |
+| .yvr vehicle record | yes + XML | **yes** (`records.h`, every game file byte for byte but the vtable) | XML |
+| .ywr waypoint record | yes + XML | **yes** (`records.h`, the heading and speed named; every game file) | XML |
 | .ysc script | - (no decompiler) | - | |
 
 ## Meta data (`.ytyp` / `.ymap` / `.ymt` / `.ymf` and the data files)
@@ -49,7 +49,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | .gxt2 text tables | yes | **yes** (`gxt2.h`): all 39,095 game files of both editions byte for byte | none |
 | Cache dat (`gta5_cache_y.dat`) | read | read: the bounds store and interior proxies (`world.h`) | the rest |
 | Heightmap / watermap / distant lights | read, write | - | everything |
-| Audio: .awc wave containers | yes + XML | - | everything |
+| Audio: .awc wave containers | yes + XML | **yes** (`awc.h`: every chunk kept, byte for byte on every game file; decrypted; PCM and ADPCM decoded to .wav) | Enhanced's codec 7; XML |
 | Audio: .rel (dat54 sounds, dat151 game, dat4 speech/audioconfig, dat10 synths, dat15 mix, dat16 curves, dat22 categories, dat149/150) | yes + XML (a typed class per item type) | **container: yes** (`rel.h`: byte for byte on 378 game and server files; index, name, hash and pack tables; a builder with the game's alignment and index order); **typed: dat151 InteriorSettings, InteriorRoom, StaticEmitterList, DoorAudioSettingsLink** | typed structs for the other ~150 item types; XML |
 | Audio occlusion `.ymt` (naOcclusionInteriorMetadata) | read as a generic PSO; no builder | **yes** (`audio_occlusion.h`: typed read/write of portal infos and path nodes, paths from rooms and portals, proxy hash) | the game's order of the path node list is not reproduced |
 | .fxc compiled shaders | read + XML | **read**: constant buffers, variables with types, registers, defaults and annotations, techniques (`fxc.h`) | the bytecode |
@@ -71,4 +71,4 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 ## Next for ragekit
 
 1. Typed models for the common PSO files (carcols, carvariations, peds ...).
-2. Animations (`.ycd`), and the smaller formats people ask for (`.gxt2`, `.awc`).
+2. Decoding animation channels (`.ycd`), and the formats still unread (`.ysc`, `.gfx`, `.mrf`, heightmaps).

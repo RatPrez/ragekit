@@ -24,8 +24,10 @@ struct RpfKeys {
     Bytes ng_keys;                   // 101 x 272 bytes (gtav_ng_key.dat)
     std::vector<uint32_t> ng_tables; // 17 rounds x 16 x 256 words (gtav_ng_decrypt_tables.dat)
     Bytes hash_lut;                  // 256 bytes (gtav_hash_lut.dat): file name hash used to pick the NG key
+    Bytes awc;                       // 16 bytes (gtav_awc_key.dat): the XXTEA key of encrypted .awc audio (from magic.dat)
 
     bool has_aes() const { return aes.size() == 32; }
+    bool has_awc() const { return awc.size() == 16; }
     bool has_ng() const { return ng_keys.size() == 101 * 272 && ng_tables.size() == 17 * 16 * 256 && hash_lut.size() == 256; }
 
     /// %USERPROFILE%\.ragekit\keys (or $HOME/.ragekit/keys).
