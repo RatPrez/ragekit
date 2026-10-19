@@ -308,8 +308,51 @@ static int cmd_info(const std::string& path, bool verbose) {
         }
     } else if (ext == ".ytyp" || ext == ".ymap") {
         print_meta(read_meta(file), verbose);
+    } else if (ext == ".yvr") {
+        const VehicleRecording v = read_yvr(file);
+        std::printf("Vehicle recording: %zu entries, %.2f s\n", v.entries.size(), v.entries.empty() ? 0.0 : v.entries.back().time / 1000.0);
+        for (size_t i = 0; i < v.entries.size() && (verbose || i < 10); i++) {
+            const VehicleRecordEntry& e = v.entries[i];
+            const Vec3 vel = e.velocity_ms();
+            std::printf("  %8u ms  (%.2f %.2f %.2f)  velocity (%.2f %.2f %.2f)  steer %d gas %d brake %d handbrake %u\n", e.time, e.position.x, e.position.y,
+                        e.position.z, vel.x, vel.y, vel.z, e.steering, e.gas, e.brake, e.handbrake);
+        }
+    } else if (ext == ".ywr") {
+        const WaypointRecording w = read_ywr(file);
+        std::printf("Waypoint recording: %zu points\n", w.entries.size());
+        for (size_t i = 0; i < w.entries.size() && (verbose || i < 10); i++) {
+            const WaypointRecordEntry& e = w.entries[i];
+            std::printf("  (%.2f %.2f %.2f)  heading %3u speed %3u flags 0x%04X  %04X %04X\n", e.position.x, e.position.y, e.position.z, e.heading, e.speed,
+                        e.flags, e.unk2, e.unk3);
+        }
     } else {
         std::printf("(no reader for %s yet)\n", ext.c_str());
+    }
+    return 0;
+}
+
+// rk hex <file> [sys|gfx] [offset] [bytes]: a resource segment (inflated) or a plain file as hex, 16 bytes a line
+static int cmd_hex(const std::vector<std::string>& args) {
+    Bytes file = rsc::read_file(args[0]);
+    Bytes seg;
+    size_t i = 1;
+    if (rsc::Resource::is_resource(file)) {
+        rsc::Resource res = rsc::Resource::load(file);
+        const bool gfx = args.size() > 1 && args[1] == "gfx";
+        if (args.size() > 1 && (args[1] == "gfx" || args[1] == "sys")) i = 2;
+        seg = gfx ? res.graphics : res.system;
+    } else seg = file;
+    const size_t from = i < args.size() ? (size_t)std::stoull(args[i], nullptr, 0) : 0;
+    const size_t len = i + 1 < args.size() ? (size_t)std::stoull(args[i + 1], nullptr, 0) : 256;
+    for (size_t p = from & ~size_t(15); p < seg.size() && p < from + len; p += 16) {
+        std::printf("%08zx ", p);
+        for (size_t k = 0; k < 16; k++) {
+            if (p + k < seg.size()) std::printf("%s%02x", k % 4 ? "" : " ", seg[p + k]);
+            else std::printf("%s  ", k % 4 ? "" : " ");
+        }
+        std::printf("  ");
+        for (size_t k = 0; k < 16 && p + k < seg.size(); k++) std::printf("%c", seg[p + k] >= 32 && seg[p + k] < 127 ? seg[p + k] : '.');
+        std::printf("\n");
     }
     return 0;
 }
@@ -330,32 +373,31 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
         std::printf("%s: %s in %zu bytes -> out %zu bytes (%s)\n", fs::path(in).filename().string().c_str(), exact, file.size(), written.size(), written == file ? "identical" : "DIFFERENT");
         return written == file ? 0 : 1;
     }
-    if (ext == ".ytd") written = write_ytd(read_ytd(file));
-    else if (ext == ".ydr") written = write_ydr(read_ydr(file));
-    else if (ext == ".ydd") written = write_ydd(read_ydd(file));
-    else if (ext == ".ybn") written = write_ybn(*read_ybn(file));
-    else if (ext == ".ytyp") written = write_ytyp(read_ytyp(file));
-    else if (ext == ".ymap") written = write_ymap(read_ymap(file));
-    else if (ext == ".yft") written = write_yft(read_yft(file));
-    else if (ext == ".yld") written = write_yld(read_yld(file));
-    else if (ext == ".ypt") written = write_ypt(read_ypt(file));
-    else if (ext == ".ynv") written = write_ynv(read_ynv(file));
-    else { std::printf("no writer for %s\n", ext.c_str()); return 1; }
+    // read -> write for each resource kind; the output is read back so a broken write fails loudly
+    using Rewrite = Bytes (*)(const Bytes&);
+    static const std::map<std::string, Rewrite> rewrites = {
+        {".ytd", [](const Bytes& f) { return write_ytd(read_ytd(f)); }},
+        {".ydr", [](const Bytes& f) { return write_ydr(read_ydr(f)); }},
+        {".ydd", [](const Bytes& f) { return write_ydd(read_ydd(f)); }},
+        {".ybn", [](const Bytes& f) { auto b = read_ybn(f); if (!b) throw Error("empty ybn"); return write_ybn(*b); }},
+        {".ytyp", [](const Bytes& f) { return write_ytyp(read_ytyp(f)); }},
+        {".ymap", [](const Bytes& f) { return write_ymap(read_ymap(f)); }},
+        {".yft", [](const Bytes& f) { return write_yft(read_yft(f)); }},
+        {".yld", [](const Bytes& f) { return write_yld(read_yld(f)); }},
+        {".ypt", [](const Bytes& f) { return write_ypt(read_ypt(f)); }},
+        {".ynv", [](const Bytes& f) { return write_ynv(read_ynv(f)); }},
+        {".yvr", [](const Bytes& f) { return write_yvr(read_yvr(f)); }},
+        {".ywr", [](const Bytes& f) { return write_ywr(read_ywr(f)); }},
+    };
+    auto it = rewrites.find(ext);
+    if (it == rewrites.end()) { std::printf("no writer for %s\n", ext.c_str()); return 1; }
+    written = it->second(file);
     rsc::write_file(out, written);
     auto a = rsc::Resource::load(file), b = rsc::Resource::load(written);
-    std::printf("%s: in %zu bytes (sys %zu gfx %zu) -> out %zu bytes (sys %zu gfx %zu)\n", fs::path(in).filename().string().c_str(), file.size(),
-                a.system.size(), a.graphics.size(), written.size(), b.system.size(), b.graphics.size());
-    // read the output back so a broken write fails loudly
-    if (ext == ".ytd") read_ytd(written);
-    else if (ext == ".ydr") read_ydr(written);
-    else if (ext == ".ybn") read_ybn(written);
-    else if (ext == ".ytyp") read_ytyp(written);
-    else if (ext == ".ymap") read_ymap(written);
-    else if (ext == ".yft") read_yft(written);
-    else if (ext == ".yld") read_yld(written);
-    else if (ext == ".ypt") read_ypt(written);
-    else if (ext == ".ynv") read_ynv(written);
-    else read_ydd(written);
+    std::printf("%s: in %zu bytes (sys %zu gfx %zu) -> out %zu bytes (sys %zu gfx %zu)%s\n", fs::path(in).filename().string().c_str(), file.size(),
+                a.system.size(), a.graphics.size(), written.size(), b.system.size(), b.graphics.size(),
+                a.system == b.system && a.graphics == b.graphics ? ", segments identical" : "");
+    (void)it->second(written);
     return 0;
 }
 
@@ -986,6 +1028,7 @@ int main(int argc, char** argv) {
         if (cmd == "ymf" && (args.size() == 1 || args.size() == 2)) return cmd_ymf(args);
         if (cmd == "ymf-make" && args.size() >= 4) return cmd_ymf_make(args);
         if (cmd == "fxc" && args.size() == 1) return cmd_fxc(args[0]);
+        if (cmd == "hex" && !args.empty()) return cmd_hex(args);
         if (cmd == "info" && args.size() == 1) return cmd_info(args[0], verbose);
         if (cmd == "dump" && args.size() == 1) return cmd_info(args[0], true);
         if (cmd == "roundtrip" && args.size() == 2) return cmd_roundtrip(args[0], args[1]);
@@ -1008,7 +1051,7 @@ int main(int argc, char** argv) {
             if (rc != 2) return rc;
         }
         std::printf("usage (any command takes --enhanced or --legacy: the edition written and the install the index opens; default legacy):\n"
-                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
+                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk hex <file> [sys|gfx] [offset] [bytes]\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
                     "  rk gltf <ydr|ydd|yft> <out.glb> [textures.ytd ...] [--all-lods] [--no-textures]\n"
                     "  rk rpf ls <file.rpf> [path] [-r] [--nested] [--tsv [--hash]]\n  rk rpf cat <file.rpf> <entry path> <out>\n  rk rpf extract <file.rpf> <out dir> [path] [--nested]\n"
                     "  rk rpf keys <GTA5.exe> [key folder] [--magic <magic.dat>]\n  rk rpf pack <dir> <out.rpf> [--aes | --ng]\n  rk rpf add <rpf> <entry path> <file>\n"

@@ -22,3 +22,33 @@ TextTable t = read_gxt2(file);
 t.set(joaat_lower("MY_LABEL"), "Hello");
 rsc::write_file("my.gxt2", write_gxt2(t));
 ```
+
+## Vehicle and waypoint recordings (`records.h`)
+
+`.yvr` files (`carrec.rpf`, 7,533 in Legacy) are the recorded drives scripted vehicles play back; `.ywr` files
+(`waypointrec.rpf`, 1,612) the routes scripted peds and vehicles follow. Each is a small resource: a root with the page
+map and one list, and an array of fixed-size entries, which ragekit reads into a vector of plain structs.
+
+| structure | size | layout |
+|---|---|---|
+| vehicle recording root | 0x20 | 0x10 entries, 0x18 count:u16, 0x1A capacity:u16 |
+| `VehicleRecordEntry` | 0x20 | time (ms), velocity x3 (i16, m/s x 273.0583), right and forward vectors (i8 x 127), steering (x 20), gas, brake, handbrake, position |
+| waypoint recording root | 0x30 | 0x18 entries, 0x20 count:u32, the rest 0 |
+| `WaypointRecordEntry` | 0x14 | position, flags:u16, heading:u8, speed:u8, unk2:u16, unk3:u16 |
+
+The waypoint fields were named from `rk_unknowns ywr` over the 106,096 points of the Legacy files:
+
+- `heading` is the direction to the next point in 256ths of a turn, 0 along +y, counter-clockwise: against the direction
+  computed from the positions it is within 2 steps on 61 % of the points (most often 1 step under it), while the
+  other convention (clockwise) spreads evenly.
+- `speed` is 64, 128 or 192 on routes whose points lie about 2 m apart (15,585 / 10,604 / 4,101 points: the pedestrian
+  routes, GUESS walk / run / sprint as a move blend ratio x 64); the other values sit on routes with points 5 to 30 m
+  apart (vehicles) and grow with the step.
+- `flags`: 0x80 on 55 %, 0 on 45 %, 0x01 0x02 0x20 0x40 on a few dozen; meaning not known.
+- `unk2` is 0 on 84 % and otherwise mostly two equal bytes (0x5F5F, 0x4F4F, 0x7F7F, 0xFFFF): GUESS the free space to
+  the left and right of the route. `unk3` is 0 on all but 12 points.
+
+Both come back byte for byte but for the root's vtable, which the game's files carry in several values by exporter
+build (Legacy `x64d.rpf` 0x40571218, its `update.rpf` copies 0x40573228, Enhanced 0x4068E108; ragekit writes
+0x40573228) and the page map's page counts (one 16 KB page or two of 8 KB hold the same): all 9,145 Legacy and 9,142
+Enhanced files.

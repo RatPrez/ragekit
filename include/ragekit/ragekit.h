@@ -31,3 +31,4 @@
 #include "fxc.h"
 #include "shader_db.h"
 #include "gxt2.h"
+#include "records.h"

@@ -876,6 +876,28 @@ static Game game_of_file(const std::string& ext, const Bytes& file) {
 }
 static Game other(Game g) { return g == Game::Enhanced ? Game::Legacy : Game::Enhanced; }
 
+// The written resource's segments are the original's, byte for byte (the formats whose layout the writer reproduces),
+// but the vtable words at `vtables` (system offsets): the game's files carry several, by exporter build, and ragekit
+// writes one.
+static void same_segments(Cmp& c, const Bytes& file, const Bytes& w, const char* what, std::initializer_list<size_t> vtables = {0}) {
+    rsc::Resource a = rsc::Resource::load(file), b = rsc::Resource::load(w);
+    for (size_t at : vtables)
+        if (at + 4 <= a.system.size() && at + 4 <= b.system.size()) std::memcpy(b.system.data() + at, a.system.data() + at, 4);
+    // the page map's page counts follow the page sizes the builder chose (two 8 KB pages or one of 16 KB hold the same)
+    for (rsc::Resource* r : {&a, &b}) {
+        uint64_t pm = 0;
+        if (r->system.size() >= 16) std::memcpy(&pm, r->system.data() + 8, 8);
+        if (r->in_system(pm) && (pm & 0xFFFFFFF) + 10 <= r->system.size()) r->system[(pm & 0xFFFFFFF) + 8] = r->system[(pm & 0xFFFFFFF) + 9] = 0;
+    }
+    auto first = [](const Bytes& x, const Bytes& y) { size_t i = 0; while (i < x.size() && i < y.size() && x[i] == y[i]) i++; return i; };
+    if (a.system != b.system) c.fail(std::string(what) + ": system segment differs at " + std::to_string(first(a.system, b.system)) + " (" + std::to_string(a.system.size()) + " / " + std::to_string(b.system.size()) + " bytes)");
+    if (a.graphics != b.graphics) c.fail(std::string(what) + ": graphics segment differs at " + std::to_string(first(a.graphics, b.graphics)));
+    if (a.version != b.version) c.fail(std::string(what) + ": version");
+}
+template <class T> static bool same_pod(const std::vector<T>& a, const std::vector<T>& b) {
+    return a.size() == b.size() && (a.empty() || std::memcmp(a.data(), b.data(), a.size() * sizeof(T)) == 0);
+}
+
 // A format that must come back byte for byte: read -> write gives the file again.
 static bool test_exact(const std::string& label, const Bytes& file, const char* kind, const std::function<Bytes(const Bytes&)>& rewrite) {
     try {
@@ -1061,6 +1083,18 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             if (g_cross) { Cmp x; x.cross = true; compare_fragment(x, a, read_yft(write_yft(a, other(game)))); if (x.diffs) c.fail("cross: " + x.first_diff); }
             check_cloth_drawables(c, file, "original");
             check_cloth_drawables(c, w, "written");
+        } else if (ext == ".yvr") {
+            const VehicleRecording a = read_yvr(file);
+            Bytes w = write_yvr(a); mix(w); out_size = w.size();
+            const VehicleRecording b = read_yvr(w);
+            if (!same_pod(a.entries, b.entries)) c.fail("yvr: entries");
+            c.eq(a.capacity, b.capacity, "yvr: capacity");
+            same_segments(c, file, w, "yvr");
+        } else if (ext == ".ywr") {
+            const WaypointRecording a = read_ywr(file);
+            Bytes w = write_ywr(a); mix(w); out_size = w.size();
+            if (!same_pod(a.entries, read_ywr(w).entries)) c.fail("ywr: entries");
+            same_segments(c, file, w, "ywr");
         } else if (ext == ".ymt") {
             // RSC7 .ymt (ped variation infos, clothing, vehicle metadata ...) are plain Meta files: generic layer only
             Meta a = read_meta(file); Bytes w = write_meta(a); mix(w); out_size = w.size(); Meta b = read_meta(w);
@@ -1101,7 +1135,8 @@ static bool test_file(const fs::path& path) {
 
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
-           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2";
+           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
+           ext == ".yvr" || ext == ".ywr";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1142,6 +1177,8 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     else if (ext == ".ytyp") (void)read_ytyp(file);
     else if (ext == ".ymap") (void)read_ymap(file);
     else if (ext == ".ymt" || ext == ".ymf" || ext == ".ypdb") (void)read_meta(file);
+    else if (ext == ".yvr") (void)read_yvr(file);
+    else if (ext == ".ywr") (void)read_ywr(file);
     else return false;
     return true;
 }
