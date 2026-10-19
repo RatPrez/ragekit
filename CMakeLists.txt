@@ -69,6 +69,7 @@ add_library(ragekit STATIC
     src/script.cpp
     src/json.cpp
     src/map_views.cpp
+    src/gfx.cpp
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c

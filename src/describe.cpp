@@ -3,6 +3,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <filesystem>
+#include <map>
 #include "ragekit/ragekit.h"
 
 namespace rk {
@@ -391,6 +392,16 @@ Fact describe(std::span<const uint8_t> file, const std::string& name, const Desc
             root.add(j.members[i].first, m.type == JsonValue::Type::Object ? fmt("%zu members", m.members.size()) : m.type == JsonValue::Type::Array ? fmt("%zu items", m.items.size())
                                                                                                                     : m.type == JsonValue::Type::Bool ? (m.boolean ? "true" : "false") : m.text);
         }
+    } else if (is_gfx(file)) {
+        const GfxMovie m = read_gfx(file);
+        root = {"Scaleform movie", fmt("version %u%s, %zu tags, %u frames at %.1f fps", m.version, m.compressed ? ", compressed" : "", m.tags.size(), m.frame_count(), m.frame_rate()), {}};
+        std::map<uint16_t, size_t> codes;
+        for (const GfxTag& t : m.tags) codes[t.code]++;
+        Fact& tf = root.add("tags by code");
+        for (auto& [code, n] : codes) tf.add(std::to_string(code), std::to_string(n));
+        const auto ex = m.exports();
+        Fact& ef = root.add("exports", std::to_string(ex.size()));
+        for (size_t i = 0; i < ex.size(); i++) if (c.show(ef, i, ex.size())) ef.add("", ex[i]);
     } else if (ext == ".nametable") {
         const auto names = read_nametable(file);
         root = {"name table", fmt("%zu names", names.size()), {}};

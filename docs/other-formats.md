@@ -173,3 +173,12 @@ data files (`tunables.json`) are JSON. `parse_json` reads a document into a smal
 file's order, numbers their text), `write_json` writes it compact or indented with tabs as the game's files are, and
 every game file reads back as the same document. One `.ugc`, `x64w.rpf/dlcpacks/mpbusiness/.../ugc_rstar.ugc`, is a
 binary file (a list of content ids), not JSON.
+
+## Scaleform movies (`gfx.h`)
+
+`.gfx` files (1,160 in Legacy) are the user interface: Flash SWF movies with Scaleform's signature, "GFX" (version 8 on
+1,137 files; 9, 10, 15 and 17 on a few) or "CFX" (one file, the body zlib-compressed). `read_gfx` keeps the frame
+rectangle and every tag's bytes (code, payload, and whether the length was written in its long form), so an
+uncompressed movie is written back byte for byte and the compressed one as the same movie; `exports()` lists the
+symbol names of its ExportAssets tags. Every movie of both editions reads back. The ActionScript (DoAction / DoABC
+tags) and the shapes stay as bytes.

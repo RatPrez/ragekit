@@ -41,3 +41,4 @@
 #include "expression.h"
 #include "script.h"
 #include "json.h"
+#include "gfx.h"

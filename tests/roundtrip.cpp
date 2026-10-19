@@ -941,6 +941,17 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
     const Game game = game_of_file(ext, file);
     if (ext == ".rel" || is_rel_ext(ext)) return test_rel(label, file);
     if (ext == ".gxt2") return test_exact(label, file, "text table", [](const Bytes& f) { return write_gxt2(read_gxt2(f)); });
+    if (ext == ".gfx") {
+        if (!is_gfx(file)) { g_untested = true; return true; }
+        const GfxMovie m = read_gfx(file);
+        if (!m.compressed) return test_exact(label, file, "movie", [](const Bytes& f) { return write_gfx(read_gfx(f)); });
+        // a compressed movie is compressed anew: the same frame and tags must come back
+        const GfxMovie b = read_gfx(write_gfx(m));
+        bool same = b.frame == m.frame && b.tags.size() == m.tags.size() && b.version == m.version;
+        for (size_t i = 0; same && i < m.tags.size(); i++) same = b.tags[i].code == m.tags[i].code && b.tags[i].payload == m.tags[i].payload;
+        say(same ? "ok    %-60s  %zu bytes, compressed movie\n" : "DIFF  %-60s  %zu bytes, the compressed movie reads back otherwise\n", label.c_str(), file.size());
+        return same;
+    }
     if (ext == ".nametable") return test_exact(label, file, "name table", [](const Bytes& f) { return write_nametable(read_nametable(f)); });
     if ((ext == ".ugc" || ext == ".json") && !looks_json(file)) { g_untested = true; return true; }   // ugc_rstar.ugc is binary
     if (ext == ".ugc" || ext == ".json") {
@@ -1241,7 +1252,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc" || ext == ".ugc" || ext == ".json" || ext == ".cut" || ext == ".pso" || is_rel_ext(ext) || ext == ".nametable";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc" || ext == ".ugc" || ext == ".json" || ext == ".cut" || ext == ".pso" || is_rel_ext(ext) || ext == ".nametable" || ext == ".gfx";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1270,6 +1281,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     if (ext == ".gxt2") { (void)read_gxt2(file); return true; }
     if (ext == ".nametable") { (void)read_nametable(file); return true; }
     if (ext == ".dds") { (void)read_dds(file, name); return true; }
+    if (ext == ".gfx") { if (!is_gfx(file)) return false; (void)read_gfx(file); return true; }
     if (ext == ".png") { (void)read_png(file); return true; }
     if (ext == ".ugc" || ext == ".json") { if (!looks_json(file)) return false; (void)parse_json(std::string_view((const char*)file.data(), file.size())); return true; }
     if (ext == ".awc") { if (!is_awc(file)) return false; (void)awc_decode(read_awc(file)); return true; }
