@@ -132,3 +132,15 @@ multi-channel files and 1,664 others in codec 7, whose blocks are laid out other
 codec). Enhanced's `update2.rpf/common/shaders/fxdb/sga_win32_60_final*.awc` are shader caches with the extension, not
 audio (`is_awc` is false). `rk info file.awc` lists the streams, chunks and sounds; `rk awc wav file.awc dir` writes
 the sounds.
+
+## Expression and frame filter dictionaries (`expression.h`)
+
+`.yed` files (242 in Legacy, `anim/expressions.rpf`, version 25) hold the expressions that drive peds' faces and
+secondary motion: each a name, instruction streams (compiled, kept raw), the bone tracks it drives, springs and
+variables. `.yfd` files (4, `anim/filters.rpf`, version 4) hold frame filters: which tracks a blend takes, with what
+weight (all of type 4, multi-weight). Both are pgDictionaries (name hashes and a list of items) and are kept as read in
+a graph of blocks like the clip dictionaries, with views for the names, tracks, streams and weights; every game file of
+both editions comes back with the same graph and no pointer-like value the schema does not know.
+
+The game also has four `.ybd` bound dictionaries, all in the AES-encrypted `levels/gta5/destruction` archives whose
+streams do not inflate (see the clip dictionaries above): there is nothing to read them from.

@@ -1116,6 +1116,22 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             const ClipDictionary b = read_ycd_checked(w, &census2);
             if (!same_graph(a.root, b.root, &diff)) c.fail("ycd: " + diff);
             if (census2) c.fail("ycd: the written file has pointer-like values the schema does not know");
+        } else if (ext == ".yed" || ext == ".yfd") {
+            size_t census = 0, census2 = 0;
+            std::string where, diff;
+            Bytes w;
+            RscBlockPtr a, b;
+            if (ext == ".yed") {
+                const ExpressionDictionary x = read_yed(file, &census, &where);
+                w = write_yed(x); a = x.root; b = read_yed(w, &census2).root;
+            } else {
+                const FrameFilterDictionary x = read_yfd(file, &census, &where);
+                w = write_yfd(x); a = x.root; b = read_yfd(w, &census2).root;
+            }
+            mix(w); out_size = w.size();
+            if (census) c.fail(ext + ": " + std::to_string(census) + " pointer-like values the schema does not know:" + where);
+            if (!same_graph(a, b, &diff)) c.fail(ext + ": " + diff);
+            if (census2) c.fail(ext + ": the written file has pointer-like values the schema does not know");
         } else if (ext == ".ynd") {
             const PathNodes a = read_ynd(file);
             Bytes w = write_ynd(a); mix(w); out_size = w.size();
@@ -1169,7 +1185,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1215,6 +1231,8 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     else if (ext == ".ywr") (void)read_ywr(file);
     else if (ext == ".ynd") (void)read_ynd(file);
     else if (ext == ".ycd") (void)read_ycd(file);
+    else if (ext == ".yed") (void)read_yed(file);
+    else if (ext == ".yfd") (void)read_yfd(file);
     else return false;
     return true;
 }

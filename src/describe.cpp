@@ -299,6 +299,25 @@ Fact resource(std::span<const uint8_t> file, const std::string& ext, const Ctx& 
             if (c.opt.verbose)
                 for (const AnimationBoneId& id : ids) af.add(fmt("bone %u", id.bone), fmt("track %u, format %u", id.track, id.format));
         }
+    } else if (ext == ".yed") {
+        const auto ex = read_yed(file).expressions();
+        root.label = "expression dictionary";
+        root.value = fmt("%zu expressions", ex.size());
+        for (size_t i = 0; i < ex.size(); i++) {
+            if (!c.show(root, i, ex.size())) break;
+            const ExpressionRef& e = ex[i];
+            Fact& ef = root.add(e.name(), fmt("%zu streams, %zu tracks, %zu springs, %zu variables, signature 0x%08X", e.stream_count(), e.tracks().size(), e.spring_count(),
+                                              e.variables().size(), e.signature()));
+            if (c.opt.verbose)
+                for (const ExpressionTrack& t : e.tracks()) ef.add(fmt("bone %u", t.bone), fmt("track %u, format %u, flags 0x%02X", t.track, t.flags & 0x7F, t.flags & 0x80));
+        }
+    } else if (ext == ".yfd") {
+        const auto fl = read_yfd(file).filters();
+        root.label = "frame filter dictionary";
+        root.value = fmt("%zu filters", fl.size());
+        for (size_t i = 0; i < fl.size(); i++)
+            if (c.show(root, i, fl.size())) root.add(hash_name(fl[i].hash), fmt("type %u, %zu entries, %zu weights, signature 0x%08X", fl[i].type(), fl[i].entry_count(),
+                                                                                 fl[i].weights().size(), fl[i].signature()));
     } else {
         root.label = "resource";
         root.value = "no reader for " + ext;

@@ -38,3 +38,4 @@
 #include "awc.h"
 #include "materials.h"
 #include "describe.h"
+#include "expression.h"
