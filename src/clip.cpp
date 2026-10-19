@@ -1,4 +1,5 @@
 #include "ragekit/clip.h"
+#include <set>
 #include "ragekit/error.h"
 #include "graph_io.h"
 
@@ -156,10 +157,9 @@ private:
 std::vector<RscBlockPtr> chain_entries(const RscBlockPtr& buckets) {
     std::vector<RscBlockPtr> out;
     if (!buckets) return out;
-    for (const RscBlock::Link& l : buckets->links) {
-        size_t guard = 0;
-        for (RscBlockPtr e = l.to; e && guard < 1000000; e = e->target(0x10), guard++) out.push_back(e);
-    }
+    std::set<const RscBlock*> seen;   // a chain that loops back (a damaged file) ends where it repeats
+    for (const RscBlock::Link& l : buckets->links)
+        for (RscBlockPtr e = l.to; e && seen.insert(e.get()).second; e = e->target(0x10)) out.push_back(e);
     return out;
 }
 
@@ -209,14 +209,16 @@ std::vector<AnimationRef> ClipDictionary::animations() const {
     std::vector<AnimationRef> v;
     RscBlockPtr map = root ? root->target(0x18) : nullptr;
     if (!map) return v;
-    for (const RscBlockPtr& e : chain_entries(map->target(0x18))) v.push_back({e->get<uint32_t>(0), e->target(0x08)});
+    for (const RscBlockPtr& e : chain_entries(map->target(0x18)))
+        if (RscBlockPtr a = e->target(0x08)) v.push_back({e->get<uint32_t>(0), a});   // an entry without an animation is skipped
     return v;
 }
 
 std::vector<ClipRef> ClipDictionary::clips() const {
     std::vector<ClipRef> v;
     if (!root) return v;
-    for (const RscBlockPtr& e : chain_entries(root->target(0x28))) v.push_back({e->get<uint32_t>(0), e->target(0x08)});
+    for (const RscBlockPtr& e : chain_entries(root->target(0x28)))
+        if (RscBlockPtr c = e->target(0x08)) v.push_back({e->get<uint32_t>(0), c});   // an entry without a clip is skipped
     return v;
 }
 

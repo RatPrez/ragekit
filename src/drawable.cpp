@@ -767,6 +767,9 @@ DrawableDictionary read_ydd(std::span<const uint8_t> file) {
     dd.hashes = r.array<uint32_t>(hashes_ptr, hashes_count);
     auto ptrs = r.array<uint64_t>(draw_ptr, draw_count);
     for (auto p : ptrs) dd.drawables.push_back(p ? read_drawable(r, p) : Drawable{});
+    // the name list and the drawable list are parallel in every game file; a damaged count would index past one of them
+    if (dd.hashes.size() != dd.drawables.size())
+        throw Error("ydd: " + std::to_string(dd.hashes.size()) + " names for " + std::to_string(dd.drawables.size()) + " drawables");
     return dd;
 }
 

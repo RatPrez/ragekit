@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 #include "ragekit/bounds.h"
+#include "ragekit/describe.h"
 #include "ragekit/gameindex.h"
 #include "ragekit/hash.h"
 #include "ragekit/image.h"
@@ -320,10 +321,95 @@ static void cache_checks() {
     fs::remove_all(cache, ec);
 }
 
+// The fuzzer: real files of every kind the library reads (a few of each, from the install the game index finds; skipped
+// without one), mutated - truncated, bytes overwritten with random values, 32-bit words set to huge counts, pointers redirected (in the
+// inflated segments of a resource, which is then deflated again) - and read through describe(), which runs every reader
+// and view. Each read must succeed or throw rk::Error; any other exception, a read slower than 5 s, or the peak working
+// set growing past 3 GB fails. RK_FUZZ_SEED and RK_FUZZ_ROUNDS change the seed and the mutations per file (40).
+static void fuzz_checks() {
+    const std::string dir = GameIndex::default_game_dir();
+    if (dir.empty()) { std::printf("  fuzz: no install found (skipped)\n"); return; }
+    const GameIndex gi = GameIndex::open(dir);
+    uint64_t seed = 0x9E3779B97F4A7C15ull;
+    if (const char* s = std::getenv("RK_FUZZ_SEED")) seed = std::strtoull(s, nullptr, 0);
+    int rounds = 40;
+    if (const char* s = std::getenv("RK_FUZZ_ROUNDS")) rounds = std::atoi(s);
+    const bool trace = std::getenv("RK_FUZZ_TRACE") != nullptr;
+    auto rnd = [&]() { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; return seed; };
+    const char* kinds[] = {".ytd", ".ydr", ".ydd", ".yft", ".ybn", ".ytyp", ".ymap", ".ymt", ".ynv", ".ypt", ".yld", ".ycd", ".yed", ".yfd", ".ynd",
+                           ".yvr", ".ywr", ".ysc", ".ybd", ".awc", ".gxt2", ".rel", ".gfx", ".ypdb", ".ymf", ".meta", ".ugc", ".nametable", ".cut"};
+    const uint64_t base_peak = peak_memory();
+    size_t reads = 0, errors = 0, bad = 0, slow = 0;
+    for (const char* kind : kinds) {
+        // three files of the kind, spread over the index, none over 4 MB
+        std::vector<IndexedFile> picks;
+        size_t seen = 0;
+        for (const IndexedFile& f : gi.files())
+            if (gi.extension(f) == kind && f.size < (4u << 20) && seen++ % 97 == 0 && picks.size() < 3) picks.push_back(f);
+        for (const IndexedFile& f : picks) {
+            Bytes orig;
+            try { orig = gi.extract(f); } catch (const std::exception&) { continue; }
+            const std::string name = gi.file_name(f);
+            const bool resource = rsc::Resource::is_resource(orig);
+            rsc::Resource res;
+            if (resource) { try { res = rsc::Resource::load(orig); } catch (const std::exception&) { continue; } }
+            for (int round = 0; round < rounds; round++) {
+                Bytes m;
+                const int how = (int)(rnd() % 4);
+                if (resource) {
+                    rsc::Resource r = res;
+                    Bytes& seg = r.graphics.empty() || rnd() % 4 ? r.system : r.graphics;
+                    if (seg.size() < 16) continue;
+                    if (how == 0) seg.resize(rnd() % seg.size());   // the page flags still say the old size: the rest reads as zero
+                    else if (how == 1) for (int k = 0; k < 8; k++) seg[rnd() % seg.size()] = (uint8_t)rnd();
+                    else if (how == 3) {
+                        // pointers redirected: a pointer-sized word set to somewhere else in the system segment (cycles,
+                        // structures read twice as different kinds, pointers into the middle of others)
+                        for (int k = 0; k < 3; k++) {
+                            const uint64_t p = rsc::kSystemBase + (rnd() % r.system.size() & ~uint64_t(15));
+                            std::memcpy(&seg[(rnd() % (seg.size() / 8)) * 8], &p, 8);
+                        }
+                    } else {
+                        static const uint32_t huge[] = {0xFFFFFFFF, 0x7FFFFFFF, 0x10000, 0xFFFF, 0x80000000, 0x50FFFFF0};
+                        for (int k = 0; k < 4; k++) put32(seg, (rnd() % (seg.size() / 4)) * 4, huge[rnd() % 6]);
+                    }
+                    if (how == 0) seg.resize(seg.size() + 0);   // keep the shorter size
+                    m = how == 0 ? Bytes(orig.begin(), orig.begin() + (ptrdiff_t)(16 + rnd() % (orig.size() - 16))) : r.save(true);
+                } else {
+                    m = orig;
+                    if (m.size() < 8) continue;
+                    if (how == 0) m.resize(rnd() % m.size());
+                    else if (how == 1 || how == 3) for (int k = 0; k < 8; k++) m[rnd() % m.size()] = (uint8_t)rnd();
+                    else for (int k = 0; k < 4 && m.size() >= 4; k++) put32(m, (rnd() % (m.size() / 4)) * 4, (uint32_t)(rnd() % 2 ? 0xFFFFFFFF : 0x7FFFFFF0));
+                }
+                const auto t0 = std::chrono::steady_clock::now();
+                reads++;
+                if (trace) {   // RK_FUZZ_TRACE: which read a crash happened in; the mutated file is kept as fuzz_last.bin
+                    std::fprintf(stderr, "%s round %d mutation %d\n", gi.path(f).c_str(), round, how);
+                    rsc::write_file("fuzz_last.bin", m);
+                }
+                try { (void)describe(m, name); }
+                catch (const Error&) { errors++; }
+                catch (const std::exception& e) {
+                    if (bad++ < 20) std::printf("  fuzz: %s round %d (mutation %d) threw %s instead of rk::Error\n", gi.path(f).c_str(), round, how, e.what());
+                }
+                const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                if (s > 5) { slow++; std::printf("  fuzz: %s round %d (mutation %d) took %.1f s\n", gi.path(f).c_str(), round, how, s); }
+            }
+        }
+    }
+    const uint64_t peak = peak_memory();
+    std::printf("  fuzz: %zu reads of mutated files, %zu threw rk::Error, %zu something else, %zu slow; peak working set %.0f MB (from %.0f)\n", reads,
+                errors, bad, slow, peak / 1048576.0, base_peak / 1048576.0);
+    check(bad == 0, "fuzz: every mutated file reads or throws rk::Error");
+    check(slow == 0, "fuzz: no read of a mutated file takes over 5 s");
+    check(peak == 0 || peak - base_peak < (3ull << 30), "fuzz: no made-up size is allocated (peak working set grows under 3 GB)");
+}
+
 int main(int argc, char** argv) {
     // names on the command line run only those groups (a crash in one, before a fix, then does not hide the others)
     const std::pair<const char*, void (*)()> groups[] = {{"rsc", rsc_checks}, {"names", name_checks}, {"xml", xml_checks}, {"rbf", rbf_checks}, {"bounds", bound_checks},
-        {"navmesh", navmesh_checks}, {"meta", meta_checks}, {"pso", pso_checks}, {"image", image_checks}, {"cache", cache_checks}};
+        {"navmesh", navmesh_checks}, {"meta", meta_checks}, {"pso", pso_checks}, {"image", image_checks}, {"cache", cache_checks}, {"fuzz", fuzz_checks}};
     for (auto& [name, run] : groups) {
         bool wanted = argc < 2;
         for (int i = 1; i < argc; i++) wanted |= std::strcmp(argv[i], name) == 0;

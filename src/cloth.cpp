@@ -159,6 +159,8 @@ ClothDictionary read_yld(std::span<const uint8_t> file) {
     ClothDictionary d;
     d.hashes = list<uint32_t>(r, rsc::kSystemBase + 0x20);
     for (uint64_t p : list<uint64_t>(r, rsc::kSystemBase + 0x30)) d.cloths.push_back(p ? read_character_cloth(r, p) : CharacterCloth{});
+    if (d.hashes.size() != d.cloths.size())
+        throw Error("yld: " + std::to_string(d.hashes.size()) + " names for " + std::to_string(d.cloths.size()) + " cloths");
     return d;
 }
 
