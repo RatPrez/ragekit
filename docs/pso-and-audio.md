@@ -108,3 +108,34 @@ difference plus the hops - follows ht_mlotool and is checked against the game's 
 way CodeWalker's PsoBuilder writes it, and `read_occlusion_ymt` reads any game file (1,431 distinct occlusion files of
 the base game and DLC packs rewrite with the same CodeWalker XML). The dat151 items use the game's room defaults
 unless you give your own. A change needs a restart of the server, not only of the resource. Not yet heard in game.
+
+## Door and emitter sounds
+
+What the game's files say (Legacy b3889, `update.rpf` `game.dat151.rel` / `sounds.dat54.rel` and the DLC packs):
+
+- **Doors.** The audio of a door model is found by name: a `DoorAudioSettingsLink` (dat151 type 117) named
+  `dasl_<model hash in hex>` (`door_audio_link_name`; 401 in game.dat151, none in the DLC packs read) points at a
+  `DoorAudioSettings` (type 47, 438 items: a dat54 sound set, a `DoorTuningParams` item, the max occlusion, 0.7 on most).
+  `DoorTuningParams` (type 48, 30 items) are the thresholds at which the audio counts a door open, closed or moving and a
+  door type: 4 for hinged doors (0246D335, used by 313 settings: `v_ilev_ct_door01`, `v_ilev_mm_door`, `v_ilev_fh_frntdoor`,
+  the fire door), 2 for up-and-over garage doors (`prop_com_ls_door_01`, `prop_gar_door_01`, Michael's and Franklin's), 1 for
+  the roller shutter `v_ilev_bl_shutter2`. The sound set (dat54 type 32) maps script names to sounds: a hinged door has
+  `opening`, `closing`, `closed`, `push`, `limit`, `collision` and one name not found (702E09E4), each a tree of variable
+  blocks, parameter transforms and multitracks over `RESIDENT/doors.awc`; a garage door has `opening`, `closing` (a synth
+  loop), `opened` and `closed` (`SimpleSound`s). This is the audio side; `doortuning.meta` is the
+  door's physics (auto-open rate and radius), not its sound.
+- **Emitters.** The `effectHash` of an archetype's `CExtensionDefAudioEmitter` names a dat151 `EntityEmitter` (type 7, 52 bytes;
+  57 in the files read: the speaker docks, fans, air conditioners, clocks ...): a sound, a max distance (18 to 100 m), the
+  chance it plays during business hours, the evening and the night, a cone, a path depth and a broken health.
+- **Sounds.** A `SimpleSound` (dat54 type 12) names a wave by `joaat_lower("<wave pack folder>/<awc name>")` (the pack table
+  lists it: `RESIDENT/doors`, `dlc_mpheist/...`) and the stream's own name. A looping wave loops through its format chunk's loop
+  point: of the simple sounds over looping waves, 2 sit under a `LoopingSound`, the rest under multitracks, wrappers, twin loops.
+
+`Dat151DoorAudioSettings`, `Dat151DoorTuningParams`, `Dat151EntityEmitter`, `Dat54SimpleSound`, `Dat54SoundSet` and
+`Dat54LoopingSound` read and write these items (every one of the game's files read writes back byte for byte, its hash and pack
+table positions included); `Dat54Header` is the header every dat54 sound carries (a flags word and the fields it names: the
+volume in hundredths of a dB, the category ...). `rel_add` puts the sound items' hash references (child sounds) and pack
+references (the container) into the tables. A resource ships its own sounds as data files: the dat54 as `AUDIO_SOUNDDATA`,
+the dat151 as `AUDIO_GAMEDATA`, a folder of `.awc` as `AUDIO_WAVEPACK` (docs.fivem.net "Data files"; the game's own DLCs ship
+`dlcmpheist_game.dat151.rel` and `dlcmpheist_sounds.dat54.rel` side by side, so the one-file-per-key rule is per file type).
+Never heard in game.

@@ -168,6 +168,30 @@ foreach (var path in args)
             Console.WriteLine($"ok   {Path.GetFileName(path)}: {ytd.TextureDict?.Textures?.data_items?.Length} textures");
             foreach (var t in ytd.TextureDict.Textures.data_items) Console.WriteLine($"       {t.Name} {t.Width}x{t.Height} {t.Format} levels {t.Levels} {t.Data?.FullData?.Length} bytes usage {t.Usage} data {Fnv(t.Data?.FullData):X16}");
         }
+        else if (lower.EndsWith(".awc"))
+        {
+            // a wave pack: every stream with its format and an FNV-1a of its samples decoded to 16-bit PCM by CodeWalker (its ADPCM
+            // decoder gives whole blocks: the hash covers the stream's own sample count)
+            var awc = new AwcFile();
+            awc.Load(data, new RpfBinaryFileEntry { Name = Path.GetFileName(path), NameLower = Path.GetFileName(path).ToLowerInvariant() });
+            if (!string.IsNullOrEmpty(awc.ErrorMessage)) throw new Exception(awc.ErrorMessage);
+            Console.WriteLine($"ok   {Path.GetFileName(path)}: flags 0x{awc.Flags:X4} streams {awc.Streams?.Length ?? 0}");
+            foreach (var s in awc.Streams ?? Array.Empty<AwcStream>())
+            {
+                var f = s.FormatChunk;
+                var pcm = s.GetPcmData();
+                if (pcm != null && pcm.Length > s.SampleCount * 2) pcm = pcm.Take(s.SampleCount * 2).ToArray();
+                Console.WriteLine($"       stream {(uint)s.Hash:X8} chunks [{string.Join(" ", s.Chunks.Select(c => c.ChunkInfo.Type.ToString()))}] codec {f?.Codec} samples {s.SampleCount} rate {s.SamplesPerSecond} loop {f?.LoopPoint} peak {f?.PeakVal} peaks {s.PeakChunk?.Data?.Length ?? 0} pcm {pcm?.Length ?? 0} bytes fnv {Fnv(pcm):X16}");
+            }
+        }
+        else if (lower.EndsWith(".rel"))
+        {
+            // an audio data file: every item as CodeWalker types it, then its XML
+            var xml = RelOracle.Xml(data, out var rel);
+            Console.WriteLine($"ok   {Path.GetFileName(path)}: {rel.RelType} items {rel.RelDatas?.Length ?? 0} hash table {rel.HashTableCount} pack table {rel.PackTableCount}");
+            foreach (var d in rel.RelDatas ?? Array.Empty<RelData>()) Console.WriteLine($"       item {(uint)d.NameHash:X8} {d.GetType().Name}");
+            Console.WriteLine(xml);
+        }
         else if (lower.EndsWith(".ytyp.xml") || lower.EndsWith(".ymap.xml"))
         {
             var doc = new XmlDocument();

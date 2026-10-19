@@ -44,11 +44,25 @@ enum : uint8_t {
     TrailerAudioSettings = 2, CarAudioSettings = 3, StaticEmitter = 6, TriggeredSpeechContext = 11, SpeechParams = 14,
     WeaponSettings = 17, PedRaceToPedVoiceGroup = 29, StaticEmitterList = 32, ScannerSpecificLocation = 35,
     AmbientZone = 37, AmbientRule = 38, AmbientBankMap = 41, InteriorSettings = 44, InteriorWeaponMetrics = 45,
-    InteriorRoom = 46, InteractiveMusicMood = 62, StopTrackAction = 64, BarConstraint = 70, AlarmSettings = 101,
-    DoorAudioSettingsLink = 117,
+    InteriorRoom = 46, DoorAudioSettings = 47, DoorTuningParams = 48, DoorList = 49, InteractiveMusicMood = 62, StopTrackAction = 64,
+    BarConstraint = 70, AlarmSettings = 101, DoorAudioSettingsLink = 117, EntityEmitter = 7,
 };
 }
 const char* dat151_type_name(uint8_t id);
+
+/// Dat54 sound type ids (`Dat54SoundType`).
+namespace dat54 {
+enum : uint8_t {
+    LoopingSound = 1, EnvelopeSound = 2, TwinLoopSound = 3, SpeechSound = 4, OnStopSound = 5, WrapperSound = 6, SequentialSound = 7,
+    StreamingSound = 8, RetriggeredOverlappedSound = 9, CrossfadeSound = 10, CollapsingStereoSound = 11, SimpleSound = 12,
+    MultitrackSound = 13, RandomizedSound = 14, EnvironmentSound = 15, DynamicEntitySound = 16, SequentialOverlapSound = 17,
+    ModularSynthSound = 18, GranularSound = 19, DirectionalSound = 20, KineticSound = 21, SwitchSound = 22, VariableCurveSound = 23,
+    VariablePrintValueSound = 24, VariableBlockSound = 25, IfSound = 26, MathOperationSound = 27, ParameterTransformSound = 28,
+    FluctuatorSound = 29, AutomationSound = 30, ExternalStreamSound = 31, SoundSet = 32, AutomationNoteMapSound = 33,
+    SoundSetList = 34, SoundHashList = 35,
+};
+}
+const char* dat54_type_name(uint8_t id);
 
 /// One index row: where an item lives in the data block.
 struct RelIndexEntry {
@@ -176,11 +190,108 @@ struct Dat151DoorAudioSettingsLink {            // type 117, named dasl_<model h
     Bytes bytes() const;
     std::vector<uint32_t> refs() const;
 };
+/// "dasl_<model hash>": the name of the link the game looks a door model's audio up by (any case: the name is hashed lower-cased).
+std::string door_audio_link_name(uint32_t model_hash);
+
+struct Dat151DoorAudioSettings {                // type 47: what a door sounds like
+    uint32_t name_offset = 0;
+    uint32_t sounds = 0;                        // a dat54 SoundSet (script names opening, opened, closing, closed, push, limit, collision ...)
+    uint32_t tuning = 0;                        // a DoorTuningParams item
+    float    max_occlusion = 0.7f;
+    static Dat151DoorAudioSettings read(const RelItem& it);
+    Bytes bytes() const;
+    std::vector<uint32_t> refs() const;         // the tuning (the sound set lives in another file and is not listed)
+};
+struct Dat151DoorTuningParams {                 // type 48: when the audio counts a door as open / closed / moving
+    uint32_t name_offset = 0;
+    uint32_t flags = 0xAAAAAAA8;
+    float    open_threshold = 0.98f, heading_threshold = 0, closed_threshold = 0.02f, speed_threshold = 0.1f, speed_scale = 1;
+    float    heading_delta_threshold = 0.001f, angular_velocity_threshold = 0.15f;
+    int32_t  door_type = 4;                     // the game's: 4 hinged, 2 garage (up and over), 1 vertical (roller shutter)
+    static Dat151DoorTuningParams read(const RelItem& it);
+    Bytes bytes() const;
+    std::vector<uint32_t> refs() const { return {}; }
+};
+struct Dat151EntityEmitter {                    // type 7: the sound of an archetype's CExtensionDefAudioEmitter (its effectHash names this item)
+    uint32_t name_offset = 0;
+    uint32_t flags = 0xAAAAAAAA;
+    uint32_t sound = 0;                         // a dat54 sound
+    float    max_distance = 30;
+    float    business_hours_prob = 1, evening_prob = 1, night_prob = 1;   // the chance it plays in each part of the day
+    float    cone_inner_angle = 0, cone_outer_angle = 0, cone_max_atten = 0;
+    uint32_t stop_after_loud_sound = 0;
+    uint8_t  max_path_depth = 3;
+    uint8_t  pad0 = 0; uint16_t pad1 = 0;
+    float    broken_health = -1;
+    static Dat151EntityEmitter read(const RelItem& it);
+    Bytes bytes() const;
+    std::vector<uint32_t> refs() const { return {}; }
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Typed dat54 sounds. A dat54 item is its type byte, a header (Dat54Header) and the type's own fields.
+
+/// The fields a sound's header can carry, by their bit in its flags word.
+namespace dat54_field {
+enum : uint8_t {
+    Flags2 = 0, MaxHeaderSize = 1, Volume = 2, VolumeVariance = 3, Pitch = 4, PitchVariance = 5, Pan = 6, PanVariance = 7,
+    PreDelay = 8, PreDelayVariance = 9, StartOffset = 10, StartOffsetVariance = 11, AttackTime = 12, ReleaseTime = 13,
+    DopplerFactor = 14, Category = 15, LPFCutoff = 16, LPFCutoffVariance = 17, HPFCutoff = 18, HPFCutoffVariance = 19,
+    VolumeCurve = 20, VolumeCurveScale = 21, VolumeCurvePlateau = 22, SpeakerMask = 23, EffectRoute = 24, PreDelayVariable = 25,
+    StartOffsetVariable = 26, SmallReverbSend = 27, MediumReverbSend = 28, LargeReverbSend = 29, Unk30 = 30, Unk31 = 31,
+};
+}
+/// A dat54 sound header: a flags word, then the fields whose bits are set, in bit order (a flags byte of 0xAA = none of
+/// its eight fields). Volume is in hundredths of a dB.
+struct Dat54Header {
+    uint32_t flags = 0xAAAAAAAA;
+    uint32_t values[32] = {};                   // by field bit, as stored (a 16-bit field in the low 16 bits: -300 is 0xFED4)
+    bool has(uint8_t field) const;
+    uint32_t get(uint8_t field) const { return has(field) ? values[field] : 0; }
+    /// Sets a field and its bit (a byte of 0xAA starts empty).
+    void set(uint8_t field, uint32_t value);
+    size_t size() const;                        // bytes, the flags word included
+    /// Reads from `b` at `pos` and moves `pos` past the header.
+    static Dat54Header read(std::span<const uint8_t> b, size_t& pos);
+    void write(Bytes& b) const;
+};
+struct Dat54SimpleSound {                       // type 12: one wave of a wave pack
+    Dat54Header header;
+    uint32_t container = 0;                     // joaat_lower("<wave pack folder>/<awc name>"), e.g. "resident/doors"
+    uint32_t wave = 0;                          // joaat_lower of the stream's name (the awc keeps its low 29 bits)
+    uint8_t  wave_slot = 0;
+    static Dat54SimpleSound read(const RelItem& it);
+    Bytes bytes() const;
+    std::vector<uint32_t> refs() const { return {}; }
+    std::vector<uint32_t> pack_refs() const;    // the container
+};
+struct Dat54SoundSet {                          // type 32: names to sounds (a door's opening, closed ...)
+    Dat54Header header;
+    std::vector<std::pair<uint32_t, uint32_t>> sounds;   // (joaat_lower of the script name, the sound), in ascending name hash
+    static Dat54SoundSet read(const RelItem& it);
+    Bytes bytes() const;
+    std::vector<uint32_t> refs() const;
+};
+struct Dat54LoopingSound {                      // type 1: plays its child `loop_count` times (-1 = until stopped)
+    Dat54Header header;
+    int16_t  loop_count = -1, loop_count_variance = 0, loop_point = 0;
+    uint32_t child = 0;
+    uint32_t loop_count_variable = 0;
+    static Dat54LoopingSound read(const RelItem& it);
+    Bytes bytes() const;
+    std::vector<uint32_t> refs() const;
+};
 
 // Typed items append with these (they pass the right hash refs).
 uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat151InteriorSettings& v);
 uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat151InteriorRoom& v);
 uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat151StaticEmitterList& v);
 uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat151DoorAudioSettingsLink& v);
+uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat151DoorAudioSettings& v);
+uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat151DoorTuningParams& v);
+uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat151EntityEmitter& v);
+uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat54SimpleSound& v);
+uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat54SoundSet& v);
+uint32_t rel_add(Rel& r, uint32_t name_hash, const Dat54LoopingSound& v);
 
 } // namespace rk

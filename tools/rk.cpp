@@ -784,6 +784,69 @@ static int cmd_occlusion(const std::vector<std::string>& args) {
 }
 int cmd_gameindex(const std::string& cmd, const std::vector<std::string>& args); // tools/rk_gameindex.cpp
 
+// ---- rk awc ------------------------------------------------------------------------------------
+static void awc_list(const std::string& path, const Bytes& bytes) {
+    const AwcFile a = read_awc(bytes);
+    std::printf("FILE %s flags 0x%04X version %u streams %zu%s size %zu\n", path.c_str(), a.flags, a.version, a.streams.size(),
+                a.whole_file_encrypted ? " encrypted" : "", bytes.size());
+    for (const AwcStream& s : a.streams) {
+        std::string order;
+        for (const AwcChunk& c : s.chunks) { char t[4]; std::snprintf(t, sizeof t, "%02X", c.type); order += t; }
+        std::printf("  %-16s chunks %-12s", hash_name(s.id).c_str(), order.c_str());
+        if (const AwcChunk* f = s.chunk(awc_chunk::Format); f && f->data.size() >= 20) {
+            const AwcFormat fm = AwcFormat::read(f->data);
+            const AwcChunk* d = s.chunk(awc_chunk::Data);
+            const AwcChunk* pk = s.chunk(awc_chunk::Peak);
+            std::printf(" codec %u rate %u samples %u loop %d headroom %d loopbe %u %u playbe %u %u fmt %zu peak 0x%08X peaks %zu data %zu",
+                        fm.codec, fm.sample_rate, fm.samples, fm.loop_point, fm.headroom, fm.loop_begin, fm.loop_end, fm.play_begin, fm.play_end,
+                        f->data.size(), fm.peak, pk ? pk->data.size() / 2 : 0, d ? d->data.size() : 0);
+        }
+        std::printf("\n");
+    }
+}
+
+static int cmd_awc_ls(const std::vector<std::string>& args) {
+    // rk awc ls <file.awc | archive.rpf>...: every stream's chunks and format (archives: every .awc in them, nested ones too)
+    std::function<void(const Rpf&, const std::string&)> walk = [&](const Rpf& rpf, const std::string& prefix) {
+        for (size_t i = 1; i < rpf.entries().size(); i++) {
+            const RpfEntry& e = rpf.entries()[i];
+            if (e.is_directory()) continue;
+            try {
+                if (e.is_archive()) walk(rpf.open_child((int)i), prefix + e.path + "/");
+                else if (ext_of(e.name) == ".awc") awc_list(prefix + e.path, rpf.extract((int)i));
+            } catch (const std::exception& ex) { std::fprintf(stderr, "%s%s: %s\n", prefix.c_str(), e.path.c_str(), ex.what()); }
+        }
+    };
+    for (const std::string& p : args) {
+        if (ext_of(p) == ".rpf") walk(Rpf::open(p), fs::path(p).filename().string() + "/");
+        else awc_list(p, rsc::read_file(p));
+    }
+    return 0;
+}
+
+static int cmd_awc_make(const std::vector<std::string>& args) {
+    // rk awc make <out.awc> <name=file.wav>... [--adpcm]: a wave pack of the sounds (stereo files mixed to mono), PCM unless --adpcm
+    std::vector<AwcSoundSource> sounds;
+    uint8_t codec = 0;
+    for (size_t i = 1; i < args.size(); i++) if (args[i] == "--adpcm") codec = 4;
+    for (size_t i = 1; i < args.size(); i++) {
+        if (args[i] == "--adpcm") continue;
+        const size_t eq = args[i].find('=');
+        if (eq == std::string::npos) throw Error("rk awc make: give each sound as <name>=<file.wav>");
+        const WavAudio w = read_wav(rsc::read_file(args[i].substr(eq + 1)));
+        AwcSoundSource s;
+        s.name = args[i].substr(0, eq);
+        s.sample_rate = w.sample_rate;
+        s.pcm = w.mono();
+        s.codec = codec;
+        sounds.push_back(std::move(s));
+    }
+    const Bytes out = write_awc(make_awc(sounds));
+    rsc::write_file(args[0], out);
+    std::printf("wrote %s (%zu sounds, %zu bytes)\n", args[0].c_str(), sounds.size(), out.size());
+    return 0;
+}
+
 static int cmd_convert(const std::string& in, const std::string& out) {
     const Bytes file = rsc::read_file(in);
     const std::string ext = ext_of(in);
@@ -845,6 +908,8 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
+        if (cmd == "awc" && args.size() >= 2 && args[0] == "ls") return cmd_awc_ls(std::vector<std::string>(args.begin() + 1, args.end()));
+        if (cmd == "awc" && args.size() >= 3 && args[0] == "make") return cmd_awc_make(std::vector<std::string>(args.begin() + 1, args.end()));
         if (cmd == "info" && args.size() == 1) return cmd_info(args[0], verbose);
         if (cmd == "dump" && args.size() == 1) return cmd_info(args[0], true);
         if (cmd == "roundtrip" && args.size() == 2) return cmd_roundtrip(args[0], args[1]);
@@ -867,7 +932,7 @@ int main(int argc, char** argv) {
             if (rc != 2) return rc;
         }
         std::printf("usage (any command takes --enhanced or --legacy: the edition written and the install the index opens; default legacy):\n"
-                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk hex <file> [sys|gfx] [offset] [bytes]\n  rk awc wav <file.awc> <dir>\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
+                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk hex <file> [sys|gfx] [offset] [bytes]\n  rk awc wav <file.awc> <dir>\n  rk awc ls <file.awc|archive.rpf>...\n  rk awc make <out.awc> <name=file.wav>... [--adpcm]\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
                     "  rk gltf <ydr|ydd|yft> <out.glb> [textures.ytd ...] [--all-lods] [--no-textures]\n"
                     "  rk rpf ls <file.rpf> [path] [-r] [--nested] [--tsv [--hash]]\n  rk rpf cat <file.rpf> <entry path> <out>\n  rk rpf extract <file.rpf> <out dir> [path] [--nested]\n"
                     "  rk rpf keys <GTA5.exe> [key folder] [--magic <magic.dat>]\n  rk rpf pack <dir> <out.rpf> [--aes | --ng]\n  rk rpf add <rpf> <entry path> <file>\n"

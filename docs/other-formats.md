@@ -131,7 +131,20 @@ another codec is listed without samples: Legacy has one (codec 5, `vw_counterfei
 multi-channel files and 1,664 others in codec 7, whose blocks are laid out otherwise (not decoded; GUESS a compressed
 codec). Enhanced's `update2.rpf/common/shaders/fxdb/sga_win32_60_final*.awc` are shader caches with the extension, not
 audio (`is_awc` is false). `rk info file.awc` lists the streams, chunks and sounds; `rk awc wav file.awc dir` writes
-the sounds.
+the sounds; `rk awc ls <file.awc | archive.rpf>...` prints each stream's chunk order and format fields.
+
+**Writing a wave pack.** `make_awc` builds a pack from 16-bit mono samples (`AwcSoundSource`: a name, a rate, the samples, the
+codec, a loop point) the way the game's single-channel packs are laid out. Measured with `rk awc ls` over `RESIDENT.rpf`,
+`ONESHOT_AMBIENCE.rpf` and three DLC packs (11,987 streams): the sound effect packs (`RESIDENT/doors.awc`, `collision`,
+`ambience`, the DLC props) are PCM, each stream a data chunk and a 24-byte format chunk (the peak of the first 4,096 samples:
+`min(2 |s|, 65535)`), with a peak chunk in front (one value per further 4,096 samples) when the sound is 8,192 samples or
+longer; speech and one-shot ambience are ADPCM with the chunks in the order data, format, peak and the last block cut to its
+samples (`4 + ceil(n / 2)` bytes). Streams are in ascending id order; the id is the low 29 bits of `joaat_lower(name)`. A loop
+point of 0 makes a wave loop (380 streams of those packs); headroom and the play / loop fields are 0 in ours. The game's packs are
+encrypted (whole file 0xFF09, DLC data 0xFF0A); ours are written plain with flags 0xFF01 (chunk indices). `awc_encode_adpcm`
+encodes with the decoder's own arithmetic (36 dB SNR on a test tone); `awc_peaks` gives the peak values. `read_wav` reads a
+16-bit PCM `.wav` (format 1 or WAVE_FORMAT_EXTENSIBLE) of any channel count and refuses float, 8 / 24 / 32-bit and compressed
+files with a plain message; `WavAudio::mono` averages the channels. `rk awc make out.awc name=file.wav... [--adpcm]` writes one.
 
 ## Expression and frame filter dictionaries (`expression.h`)
 

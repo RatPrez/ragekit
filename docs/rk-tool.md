@@ -11,6 +11,8 @@ rk info <file> [-v]                    what the file holds: the facts of describ
 rk hex <file> [sys|gfx] [offset] [bytes]   a resource segment (inflated) or a plain file as hex
 rk roundtrip <in> <out>                read, write, read back (the byte-exact kinds say whether the output is identical)
 rk awc wav <file.awc> <dir>            every sound of an audio container as a .wav
+rk awc ls <file.awc | archive.rpf>...  every stream's chunks and format (archives: every .awc in them)
+rk awc make <out.awc> <name=file.wav>... [--adpcm]   a wave pack of .wav files (PCM unless --adpcm)
 rk psodump [--max N] [--flat] <file>   a text dump of a PSO file (binary .ymt, .ypdb, .ymf ...); info -v lists its sections and schema
 rk ymf <in.ymf> [out.ymf]              list a streaming manifest, optionally write it back with write_ymf
 rk ymf-make <out.ymf> <interior> <ytyp> <ybn> [<ytyp dependency>...]   the manifest a custom interior resource needs

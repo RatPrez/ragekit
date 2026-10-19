@@ -32,7 +32,7 @@ in about four and a half minutes, all of which read back field for field.
 | `rk_texenc_test` | block compression quality (RMS limits on synthetic images) |
 | `rk_rpf_test` | cipher test vectors and the archive writer; with archive arguments, every ytd/ydr/ydd/ybn/yft/ytyp/ymap inside them (nested archives too) extracted and parsed |
 | `rk_occluder_test` | box occluders, occlude models, entities removed from a ymap; every occlusion ymap of the game round-trips |
-| `rk_audio_test` | `.rel` containers and interior audio (proxy hashes, occlusion paths); no game files needed |
+| `rk_audio_test` | `.rel` containers, interior audio (proxy hashes, occlusion paths), wave packs from PCM (PCM exact, ADPCM within 25 dB), `.wav` reading, the typed door / emitter / sound items; no game files needed. `rk_audio_test <file.rel>...` also writes back every typed item of those files and checks its table entries (game.dat151 908 items, sounds.dat54 22,957, all byte for byte) |
 | `rk_shaderdb_test` | the shader database: rules, cache, the game's layouts |
 | `rk_world_test` | the world index against the game install: counts, MLO instance rotation, queries |
 | `rk_gen9_test` | Legacy <-> Enhanced conversions against the game's own files: every file at the same path in both installs converted each way and compared ([enhanced.md](enhanced.md)) |

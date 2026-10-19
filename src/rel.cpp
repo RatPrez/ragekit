@@ -62,8 +62,22 @@ const char* dat151_type_name(uint8_t id) {
         case dat151::InteriorWeaponMetrics: return "InteriorWeaponMetrics";
         case dat151::InteriorRoom: return "InteriorRoom";
         case dat151::DoorAudioSettingsLink: return "DoorAudioSettingsLink";
+        case dat151::DoorAudioSettings: return "DoorAudioSettings";
+        case dat151::DoorTuningParams: return "DoorTuningParams";
+        case dat151::DoorList: return "DoorList";
+        case dat151::EntityEmitter: return "EntityEmitter";
         default: return "";
     }
+}
+
+const char* dat54_type_name(uint8_t id) {
+    static const char* const names[] = {"", "LoopingSound", "EnvelopeSound", "TwinLoopSound", "SpeechSound", "OnStopSound", "WrapperSound",
+        "SequentialSound", "StreamingSound", "RetriggeredOverlappedSound", "CrossfadeSound", "CollapsingStereoSound", "SimpleSound",
+        "MultitrackSound", "RandomizedSound", "EnvironmentSound", "DynamicEntitySound", "SequentialOverlapSound", "ModularSynthSound",
+        "GranularSound", "DirectionalSound", "KineticSound", "SwitchSound", "VariableCurveSound", "VariablePrintValueSound",
+        "VariableBlockSound", "IfSound", "MathOperationSound", "ParameterTransformSound", "FluctuatorSound", "AutomationSound",
+        "ExternalStreamSound", "SoundSet", "AutomationNoteMapSound", "SoundSetList", "SoundHashList"};
+    return id < sizeof names / sizeof names[0] ? names[id] : "";
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -287,7 +301,7 @@ std::string rel_describe(const Rel& r, size_t max_items) {
     size_t n = 0;
     for (auto& it : r.items()) {
         if (max_items && n++ >= max_items) { s += "  ...\n"; break; }
-        std::string tn = r.type == reltype::Dat151 ? dat151_type_name(it.type_id) : "";
+        std::string tn = r.type == reltype::Dat151 ? dat151_type_name(it.type_id) : r.type == reltype::Dat54 ? dat54_type_name(it.type_id) : "";
         std::snprintf(buf, sizeof buf, "  %08X  @%-8u %-6u type %-3u %s%s%s\n", it.hash, it.offset, it.length, it.type_id, tn.c_str(),
                       it.name.empty() ? "" : "  ", it.name.c_str());
         s += buf;
@@ -398,6 +412,189 @@ uint32_t rel_add(Rel& r, uint32_t h, const Dat151InteriorSettings& v) { Bytes b 
 uint32_t rel_add(Rel& r, uint32_t h, const Dat151InteriorRoom& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
 uint32_t rel_add(Rel& r, uint32_t h, const Dat151StaticEmitterList& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
 uint32_t rel_add(Rel& r, uint32_t h, const Dat151DoorAudioSettingsLink& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
+
+std::string door_audio_link_name(uint32_t model_hash) {
+    char b[16];
+    std::snprintf(b, sizeof b, "dasl_%08x", model_hash);
+    return b;
+}
+
+Dat151DoorAudioSettings Dat151DoorAudioSettings::read(const RelItem& it) {
+    need_type(it, dat151::DoorAudioSettings, 16, "DoorAudioSettings");
+    Dat151DoorAudioSettings v;
+    v.name_offset = it.u32(0) >> 8;
+    v.sounds = it.u32(4); v.tuning = it.u32(8); v.max_occlusion = get_float(it, 12);
+    return v;
+}
+Bytes Dat151DoorAudioSettings::bytes() const {
+    Bytes b;
+    put_header(b, dat151::DoorAudioSettings, name_offset);
+    put32(b, sounds); put32(b, tuning); put_float(b, max_occlusion);
+    return b;
+}
+std::vector<uint32_t> Dat151DoorAudioSettings::refs() const { return {8}; }
+
+Dat151DoorTuningParams Dat151DoorTuningParams::read(const RelItem& it) {
+    need_type(it, dat151::DoorTuningParams, 40, "DoorTuningParams");
+    Dat151DoorTuningParams v;
+    v.name_offset = it.u32(0) >> 8;
+    v.flags = it.u32(4);
+    v.open_threshold = get_float(it, 8); v.heading_threshold = get_float(it, 12); v.closed_threshold = get_float(it, 16);
+    v.speed_threshold = get_float(it, 20); v.speed_scale = get_float(it, 24); v.heading_delta_threshold = get_float(it, 28);
+    v.angular_velocity_threshold = get_float(it, 32); v.door_type = (int32_t)it.u32(36);
+    return v;
+}
+Bytes Dat151DoorTuningParams::bytes() const {
+    Bytes b;
+    put_header(b, dat151::DoorTuningParams, name_offset);
+    put32(b, flags);
+    put_float(b, open_threshold); put_float(b, heading_threshold); put_float(b, closed_threshold); put_float(b, speed_threshold);
+    put_float(b, speed_scale); put_float(b, heading_delta_threshold); put_float(b, angular_velocity_threshold);
+    put32(b, (uint32_t)door_type);
+    return b;
+}
+
+Dat151EntityEmitter Dat151EntityEmitter::read(const RelItem& it) {
+    need_type(it, dat151::EntityEmitter, 52, "EntityEmitter");
+    Dat151EntityEmitter v;
+    v.name_offset = it.u32(0) >> 8;
+    v.flags = it.u32(4); v.sound = it.u32(8); v.max_distance = get_float(it, 12);
+    v.business_hours_prob = get_float(it, 16); v.evening_prob = get_float(it, 20); v.night_prob = get_float(it, 24);
+    v.cone_inner_angle = get_float(it, 28); v.cone_outer_angle = get_float(it, 32); v.cone_max_atten = get_float(it, 36);
+    v.stop_after_loud_sound = it.u32(40);
+    const uint32_t w = it.u32(44);
+    v.max_path_depth = uint8_t(w); v.pad0 = uint8_t(w >> 8); v.pad1 = uint16_t(w >> 16);
+    v.broken_health = get_float(it, 48);
+    return v;
+}
+Bytes Dat151EntityEmitter::bytes() const {
+    Bytes b;
+    put_header(b, dat151::EntityEmitter, name_offset);
+    put32(b, flags); put32(b, sound); put_float(b, max_distance);
+    put_float(b, business_hours_prob); put_float(b, evening_prob); put_float(b, night_prob);
+    put_float(b, cone_inner_angle); put_float(b, cone_outer_angle); put_float(b, cone_max_atten);
+    put32(b, stop_after_loud_sound);
+    put32(b, uint32_t(max_path_depth) | uint32_t(pad0) << 8 | uint32_t(pad1) << 16);
+    put_float(b, broken_health);
+    return b;
+}
+
+uint32_t rel_add(Rel& r, uint32_t h, const Dat151DoorAudioSettings& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
+uint32_t rel_add(Rel& r, uint32_t h, const Dat151DoorTuningParams& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
+uint32_t rel_add(Rel& r, uint32_t h, const Dat151EntityEmitter& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
+
+// ---- dat54
+
+namespace {
+// the size of each header field by its bit (CodeWalker's RelSoundHeader)
+constexpr uint8_t kHeaderFieldSize[32] = {4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 2, 2, 4, 2, 2, 2, 2, 4, 2, 1, 1, 1, 4, 4, 2, 2, 2, 2, 2};
+
+std::span<const uint8_t> sound_body(const RelItem& it, uint8_t type, const char* what, Dat54Header& h, size_t min_body) {
+    if (it.bytes.empty() || it.type_id != type) throw Error(std::string("rel: item is not a ") + what);
+    size_t pos = 1;
+    h = Dat54Header::read(it.bytes, pos);
+    if (it.bytes.size() - pos < min_body) throw Error(std::string("rel: ") + what + " is cut off");
+    return it.bytes.subspan(pos);
+}
+uint32_t body_u32(std::span<const uint8_t> b, size_t pos) { return rd32(b.data() + pos); }
+uint16_t body_u16(std::span<const uint8_t> b, size_t pos) { return uint16_t(b[pos] | b[pos + 1] << 8); }
+void put16(Bytes& b, uint16_t v) { b.push_back(uint8_t(v)); b.push_back(uint8_t(v >> 8)); }
+}
+
+bool Dat54Header::has(uint8_t field) const {
+    return field < 32 && ((flags >> (field & ~7u)) & 0xFF) != 0xAA && (flags >> field & 1);
+}
+void Dat54Header::set(uint8_t field, uint32_t value) {
+    if (field >= 32) return;
+    const uint32_t shift = field & ~7u;
+    if (((flags >> shift) & 0xFF) == 0xAA) flags &= ~(0xFFu << shift);
+    flags |= 1u << field;
+    values[field] = value;
+}
+size_t Dat54Header::size() const {
+    size_t n = 4;
+    for (uint8_t f = 0; f < 32; f++) if (has(f)) n += kHeaderFieldSize[f];
+    return n;
+}
+Dat54Header Dat54Header::read(std::span<const uint8_t> b, size_t& pos) {
+    if (pos + 4 > b.size()) throw Error("rel: a sound header is cut off");
+    Dat54Header h;
+    h.flags = rd32(b.data() + pos);
+    pos += 4;
+    for (uint8_t f = 0; f < 32; f++) {
+        if (!h.has(f)) continue;
+        const size_t n = kHeaderFieldSize[f];
+        if (pos + n > b.size()) throw Error("rel: a sound header is cut off");
+        uint32_t v = 0;
+        for (size_t i = 0; i < n; i++) v |= uint32_t(b[pos + i]) << (8 * i);
+        h.values[f] = v;
+        pos += n;
+    }
+    return h;
+}
+void Dat54Header::write(Bytes& b) const {
+    put32(b, flags);
+    for (uint8_t f = 0; f < 32; f++) {
+        if (!has(f)) continue;
+        for (size_t i = 0; i < kHeaderFieldSize[f]; i++) b.push_back(uint8_t(values[f] >> (8 * i)));
+    }
+}
+
+Dat54SimpleSound Dat54SimpleSound::read(const RelItem& it) {
+    Dat54SimpleSound v;
+    const auto b = sound_body(it, dat54::SimpleSound, "SimpleSound", v.header, 9);
+    v.container = body_u32(b, 0); v.wave = body_u32(b, 4); v.wave_slot = b[8];
+    return v;
+}
+Bytes Dat54SimpleSound::bytes() const {
+    Bytes b{dat54::SimpleSound};
+    header.write(b);
+    put32(b, container); put32(b, wave); b.push_back(wave_slot);
+    return b;
+}
+std::vector<uint32_t> Dat54SimpleSound::pack_refs() const { return {uint32_t(1 + header.size())}; }
+
+Dat54SoundSet Dat54SoundSet::read(const RelItem& it) {
+    Dat54SoundSet v;
+    const auto b = sound_body(it, dat54::SoundSet, "SoundSet", v.header, 4);
+    const uint32_t n = body_u32(b, 0);
+    if ((b.size() - 4) / 8 < n) throw Error("rel: SoundSet is cut off");
+    for (uint32_t i = 0; i < n; i++) v.sounds.emplace_back(body_u32(b, 4 + 8 * i), body_u32(b, 8 + 8 * i));
+    return v;
+}
+Bytes Dat54SoundSet::bytes() const {
+    Bytes b{dat54::SoundSet};
+    header.write(b);
+    put32(b, (uint32_t)sounds.size());
+    for (auto& [name, sound] : sounds) { put32(b, name); put32(b, sound); }
+    return b;
+}
+std::vector<uint32_t> Dat54SoundSet::refs() const {
+    std::vector<uint32_t> r;
+    const uint32_t base = uint32_t(1 + header.size());
+    for (size_t i = 0; i < sounds.size(); i++) r.push_back(base + 8 + 8 * (uint32_t)i);
+    return r;
+}
+
+Dat54LoopingSound Dat54LoopingSound::read(const RelItem& it) {
+    Dat54LoopingSound v;
+    const auto b = sound_body(it, dat54::LoopingSound, "LoopingSound", v.header, 14);
+    v.loop_count = (int16_t)body_u16(b, 0); v.loop_count_variance = (int16_t)body_u16(b, 2); v.loop_point = (int16_t)body_u16(b, 4);
+    v.child = body_u32(b, 6); v.loop_count_variable = body_u32(b, 10);
+    return v;
+}
+Bytes Dat54LoopingSound::bytes() const {
+    Bytes b{dat54::LoopingSound};
+    header.write(b);
+    put16(b, (uint16_t)loop_count); put16(b, (uint16_t)loop_count_variance); put16(b, (uint16_t)loop_point);
+    put32(b, child); put32(b, loop_count_variable);
+    return b;
+}
+std::vector<uint32_t> Dat54LoopingSound::refs() const { return {uint32_t(1 + header.size() + 6)}; }
+
+uint32_t rel_add(Rel& r, uint32_t h, const Dat54SimpleSound& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs(), v.pack_refs()); }
+uint32_t rel_add(Rel& r, uint32_t h, const Dat54SoundSet& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
+uint32_t rel_add(Rel& r, uint32_t h, const Dat54LoopingSound& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
 
 std::vector<std::string> read_nametable(std::span<const uint8_t> file) {
     std::vector<std::string> names;

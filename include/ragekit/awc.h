@@ -75,4 +75,53 @@ std::vector<AwcAudio> awc_decode(const AwcFile& a, std::shared_ptr<const RpfKeys
 /// A 16-bit mono .wav of a sound.
 Bytes awc_wav(const AwcAudio& s);
 
+/// A single-channel stream's format chunk: 20 bytes, or 24 with the peak of the first 4,096 samples.
+struct AwcFormat {
+    uint32_t samples = 0;
+    int32_t  loop_point = -1;         // the sample a looping sound goes back to; -1 = plays once
+    uint16_t sample_rate = 0;
+    int16_t  headroom = 0;
+    uint16_t loop_begin = 0, loop_end = 0, play_end = 0;
+    uint8_t  play_begin = 0;
+    uint8_t  codec = 0;               // 0 PCM, 4 IMA ADPCM
+    bool     has_peak = false;
+    uint32_t peak = 0;                // low 16 bits: min(2 |sample|, 65535) over the first 4,096 samples
+    /// Throws rk::Error for a chunk shorter than 20 bytes.
+    static AwcFormat read(std::span<const uint8_t> chunk);
+    Bytes bytes() const;
+};
+
+/// One sound to put into a wave pack: 16-bit mono samples.
+struct AwcSoundSource {
+    std::string name;                 // the stream id is joaat_lower(name) & 0x1FFFFFFF, what a SimpleSound's wave field names
+    uint32_t sample_rate = 0;         // at most 65,535 (the format chunk's field is 16 bits)
+    std::vector<int16_t> pcm;
+    uint8_t codec = 0;                // 0 PCM (the game's sound effect packs), 4 IMA ADPCM (its speech and one-shot ambience)
+    int32_t loop_point = -1;          // 0 = the whole sound loops
+};
+
+/// A wave pack laid out as the game's single-channel packs are (docs/pso-and-audio.md): flags 0xFF01 (chunk indices,
+/// nothing encrypted), streams in ascending id order, each a data chunk, a format chunk with the peak and a peak chunk
+/// when the sound is 8,192 samples or longer (PCM: peak, data, format; ADPCM: data, format, peak). Throws rk::Error for
+/// no sounds, an empty sound, a rate past 65,535, two names of one id, a loop point past the end or another codec.
+AwcFile make_awc(const std::vector<AwcSoundSource>& sounds);
+/// IMA ADPCM as the game stores it (blocks of 2,048 bytes: the step index, 0, the predictor as an i16, then 4,088
+/// samples as nibbles, low nibble first); awc_decode reads it back.
+Bytes awc_encode_adpcm(std::span<const int16_t> pcm);
+/// The peak values of a sound: [0] over the first 4,096 samples (the format chunk's), then one per further whole block of
+/// 4,096 that starts before the last 4,096 (the peak chunk's).
+std::vector<uint16_t> awc_peaks(std::span<const int16_t> pcm);
+
+/// A .wav file's audio: 16-bit PCM (format 1, or WAVE_FORMAT_EXTENSIBLE with the PCM subformat), its channels
+/// interleaved. Throws rk::Error with a plain message for anything else (another bit depth, a compressed format, no data).
+struct WavAudio {
+    uint32_t sample_rate = 0;
+    uint16_t channels = 0;
+    std::vector<int16_t> samples;     // interleaved
+    size_t frames() const { return channels ? samples.size() / channels : 0; }
+    /// The channels averaged into one.
+    std::vector<int16_t> mono() const;
+};
+WavAudio read_wav(std::span<const uint8_t> file);
+
 }  // namespace rk

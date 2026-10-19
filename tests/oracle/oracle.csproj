@@ -12,7 +12,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <CodeWalkerCore Condition="'$(CodeWalkerCore)' == ''">$(MSBuildThisFileDirectory)..\..\..\rat-tooling\shared\vendor\CodeWalker.Core\CodeWalker.Core.csproj</CodeWalkerCore>
   </PropertyGroup>
-  <ItemGroup>
+  <!-- or a CodeWalker.Core already built: -p:CodeWalkerDll=path\to\folder (CodeWalker.Core.dll and SharpDX*.dll in it) -->
+  <ItemGroup Condition="'$(CodeWalkerDll)' == ''">
     <ProjectReference Include="$(CodeWalkerCore)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(CodeWalkerDll)' != ''">
+    <Reference Include="CodeWalker.Core"><HintPath>$(CodeWalkerDll)\CodeWalker.Core.dll</HintPath></Reference>
+    <Reference Include="SharpDX"><HintPath>$(CodeWalkerDll)\SharpDX.dll</HintPath></Reference>
+    <Reference Include="SharpDX.Mathematics"><HintPath>$(CodeWalkerDll)\SharpDX.Mathematics.dll</HintPath></Reference>
   </ItemGroup>
 </Project>

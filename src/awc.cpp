@@ -1,7 +1,10 @@
 #include "ragekit/awc.h"
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <set>
 #include "ragekit/error.h"
+#include "ragekit/hash.h"
 
 namespace rk {
 
@@ -85,13 +88,15 @@ size_t alignment(uint8_t t) {
 
 // IMA ADPCM as the game stores it: blocks of 2048 bytes, each a 4-byte header (step index, 0, predictor:i16) and 2044
 // bytes of nibbles, low nibble first.
+const int index_table[16] = {-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};
+const int16_t step_table[89] = {
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173,
+    190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
+    2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818,
+    18500, 20350, 22385, 24623, 27086, 29794, 32767};
+constexpr size_t kAdpcmBlock = 2048, kAdpcmBlockSamples = (kAdpcmBlock - 4) * 2;
+
 std::vector<int16_t> decode_adpcm(std::span<const uint8_t> data, uint32_t samples) {
-    static const int index_table[16] = {-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};
-    static const int16_t step_table[89] = {
-        7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173,
-        190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
-        2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818,
-        18500, 20350, 22385, 24623, 27086, 29794, 32767};
     std::vector<int16_t> out;
     out.reserve(std::min<size_t>(samples, data.size() * 2));
     int predictor = 0, index = 0;
@@ -331,6 +336,196 @@ Bytes awc_wav(const AwcAudio& s) {
     w32(40, bytes);
     if (bytes) std::memcpy(b.data() + 44, s.pcm.data(), bytes);
     return b;
+}
+
+AwcFormat AwcFormat::read(std::span<const uint8_t> c) {
+    if (c.size() < 20) throw Error("awc: a format chunk of " + std::to_string(c.size()) + " bytes");
+    AwcFormat f;
+    f.samples = get<uint32_t>(c, 0);
+    f.loop_point = get<int32_t>(c, 4);
+    f.sample_rate = get<uint16_t>(c, 8);
+    f.headroom = get<int16_t>(c, 10);
+    f.loop_begin = get<uint16_t>(c, 12);
+    f.loop_end = get<uint16_t>(c, 14);
+    f.play_end = get<uint16_t>(c, 16);
+    f.play_begin = c[18];
+    f.codec = c[19];
+    if (c.size() >= 24) { f.has_peak = true; f.peak = get<uint32_t>(c, 20); }
+    return f;
+}
+
+Bytes AwcFormat::bytes() const {
+    Bytes b(has_peak ? 24 : 20);
+    put(b, 0, samples);
+    put(b, 4, loop_point);
+    put(b, 8, sample_rate);
+    put(b, 10, headroom);
+    put(b, 12, loop_begin);
+    put(b, 14, loop_end);
+    put(b, 16, play_end);
+    b[18] = play_begin;
+    b[19] = codec;
+    if (has_peak) put(b, 20, peak);
+    return b;
+}
+
+Bytes awc_encode_adpcm(std::span<const int16_t> pcm) {
+    Bytes out;
+    out.reserve((pcm.size() / kAdpcmBlockSamples + 1) * kAdpcmBlock);
+    int predictor = pcm.empty() ? 0 : pcm[0], index = 0;
+    for (size_t at = 0; at < pcm.size(); at += kAdpcmBlockSamples) {
+        // a block starts from the state the previous one left (the first from the first sample), as the decoder resets to it
+        const size_t n = std::min(kAdpcmBlockSamples, pcm.size() - at);
+        const size_t head = out.size();
+        out.resize(head + 4 + (n + 1) / 2, 0);
+        out[head] = (uint8_t)index;
+        const int16_t pr = (int16_t)std::clamp(predictor, -32768, 32767);
+        predictor = pr;
+        std::memcpy(out.data() + head + 2, &pr, 2);
+        for (size_t i = 0; i < n; i++) {
+            // the nibble whose decoded value comes nearest (the decoder's own arithmetic, so both stay in step), never one
+            // that leaves the 16-bit range
+            const int step = step_table[index];
+            const int want = pcm[at + i];
+            int best = 0, best_err = 1 << 30;
+            for (int code = 0; code < 16; code++) {
+                int diff = (((code & 7) << 1) + 1) * step >> 3;
+                if (code & 8) diff = -diff;
+                const int v = predictor + diff;
+                if (v < -32768 || v > 32767) continue;
+                const int err = std::abs(v - want);
+                if (err < best_err) { best_err = err; best = code; }
+            }
+            int diff = (((best & 7) << 1) + 1) * step >> 3;
+            if (best & 8) diff = -diff;
+            predictor += diff;
+            index = std::clamp(index + index_table[best], 0, 88);
+            out[head + 4 + i / 2] |= (uint8_t)(i & 1 ? best << 4 : best);
+        }
+    }
+    return out;
+}
+
+std::vector<uint16_t> awc_peaks(std::span<const int16_t> pcm) {
+    constexpr size_t kBlock = 4096;
+    auto peak_of = [&](size_t from) {
+        uint16_t p = 0;
+        for (size_t i = from; i < std::min(pcm.size(), from + kBlock); i++) p = (uint16_t)std::max<int>(p, std::min(std::abs((int)pcm[i]) * 2, 65535));
+        return p;
+    };
+    std::vector<uint16_t> v{peak_of(0)};
+    if (pcm.size() >= 2 * kBlock)
+        for (size_t n = 1; n <= (pcm.size() - kBlock) / kBlock; n++) v.push_back(peak_of(n * kBlock));
+    return v;
+}
+
+AwcFile make_awc(const std::vector<AwcSoundSource>& sounds) {
+    if (sounds.empty()) throw Error("awc: a wave pack with no sounds");
+    std::vector<const AwcSoundSource*> order;
+    std::set<uint32_t> ids;
+    for (const AwcSoundSource& s : sounds) {
+        const uint32_t id = joaat_lower(s.name) & 0x1FFFFFFF;
+        if (!ids.insert(id).second) throw Error("awc: two sounds with the stream id of \"" + s.name + "\"");
+        if (s.pcm.empty()) throw Error("awc: the sound \"" + s.name + "\" has no samples");
+        if (s.sample_rate == 0 || s.sample_rate > 65535) throw Error("awc: the sound \"" + s.name + "\" has a sample rate of " + std::to_string(s.sample_rate) + " Hz (1 to 65,535)");
+        if (s.codec != 0 && s.codec != 4) throw Error("awc: codec " + std::to_string(s.codec) + " (PCM 0 and ADPCM 4 are written)");
+        if (s.loop_point >= (int64_t)s.pcm.size()) throw Error("awc: the sound \"" + s.name + "\" loops from past its end");
+        order.push_back(&s);
+    }
+    std::sort(order.begin(), order.end(), [](const AwcSoundSource* a, const AwcSoundSource* b) {
+        return (joaat_lower(a->name) & 0x1FFFFFFF) < (joaat_lower(b->name) & 0x1FFFFFFF);
+    });
+    AwcFile a;
+    a.flags = 0xFF01;
+    uint16_t first = 0;
+    for (const AwcSoundSource* s : order) {
+        AwcStream st;
+        st.id = joaat_lower(s->name) & 0x1FFFFFFF;
+        const std::vector<uint16_t> peaks = awc_peaks(s->pcm);
+        AwcFormat f;
+        f.samples = (uint32_t)s->pcm.size();
+        f.loop_point = s->loop_point;
+        f.sample_rate = (uint16_t)s->sample_rate;
+        f.codec = s->codec;
+        f.has_peak = true;
+        f.peak = peaks[0];
+        AwcChunk data{awc_chunk::Data, 0, {}};
+        if (s->codec == 4) data.data = awc_encode_adpcm(s->pcm);
+        else {
+            data.data.resize(s->pcm.size() * 2);
+            std::memcpy(data.data.data(), s->pcm.data(), data.data.size());
+        }
+        AwcChunk format{awc_chunk::Format, 0, f.bytes()};
+        // the game's PCM packs list peak, data, format; its ADPCM packs data, format, peak
+        AwcChunk peak{awc_chunk::Peak, 0, Bytes(peaks.size() > 1 ? (peaks.size() - 1) * 2 : 0)};
+        if (peaks.size() > 1) std::memcpy(peak.data.data(), peaks.data() + 1, peak.data.size());
+        if (peaks.size() > 1 && s->codec == 0) st.chunks.push_back(std::move(peak));
+        st.chunks.push_back(std::move(data));
+        st.chunks.push_back(std::move(format));
+        if (peaks.size() > 1 && s->codec == 4) st.chunks.push_back(std::move(peak));
+        a.chunk_indices.push_back(first);
+        first = (uint16_t)(first + st.chunks.size());
+        a.streams.push_back(std::move(st));
+    }
+    a.pack();
+    return a;
+}
+
+std::vector<int16_t> WavAudio::mono() const {
+    if (channels <= 1) return samples;
+    std::vector<int16_t> m(frames());
+    for (size_t i = 0; i < m.size(); i++) {
+        int sum = 0;
+        for (uint16_t c = 0; c < channels; c++) sum += samples[i * channels + c];
+        m[i] = (int16_t)(sum / (int)channels);
+    }
+    return m;
+}
+
+WavAudio read_wav(std::span<const uint8_t> file) {
+    if (file.size() < 12 || std::memcmp(file.data(), "RIFF", 4) || std::memcmp(file.data() + 8, "WAVE", 4))
+        throw Error("not a .wav file (no RIFF WAVE header)");
+    WavAudio w;
+    bool have_fmt = false, have_data = false;
+    uint16_t format = 0, bits = 0;
+    for (size_t p = 12; p + 8 <= file.size();) {
+        const uint32_t size = get<uint32_t>(file, p + 4);
+        const size_t body = p + 8;
+        if (size > file.size() - body) {
+            if (!std::memcmp(file.data() + p, "data", 4) && have_fmt) {   // a data chunk cut short: take what is there
+                const size_t n = (file.size() - body) / 2;
+                w.samples.resize(n);
+                std::memcpy(w.samples.data(), file.data() + body, n * 2);
+                have_data = true;
+            }
+            break;
+        }
+        if (!std::memcmp(file.data() + p, "fmt ", 4)) {
+            if (size < 16) throw Error("a .wav file whose format chunk is too short");
+            format = get<uint16_t>(file, body);
+            w.channels = get<uint16_t>(file, body + 2);
+            w.sample_rate = get<uint32_t>(file, body + 4);
+            bits = get<uint16_t>(file, body + 14);
+            if (format == 0xFFFE && size >= 40) format = get<uint16_t>(file, body + 24);   // WAVE_FORMAT_EXTENSIBLE: the subformat
+            have_fmt = true;
+        } else if (!std::memcmp(file.data() + p, "data", 4)) {
+            if (!have_fmt) throw Error("a .wav file whose data comes before its format");
+            if (format == 1 && bits == 16) {
+                w.samples.resize(size / 2);
+                std::memcpy(w.samples.data(), file.data() + body, w.samples.size() * 2);
+            }
+            have_data = true;
+        }
+        p = body + size + (size & 1);
+    }
+    if (!have_fmt) throw Error("a .wav file without a format chunk");
+    if (format != 1) throw Error(format == 3 ? "a 32-bit float .wav (save it as 16-bit PCM)" : "a compressed .wav (format " + std::to_string(format) + "; save it as 16-bit PCM)");
+    if (bits != 16) throw Error("a " + std::to_string(bits) + "-bit .wav (save it as 16-bit PCM)");
+    if (w.channels == 0) throw Error("a .wav file with no channels");
+    if (w.sample_rate == 0) throw Error("a .wav file with a sample rate of 0");
+    if (!have_data || w.samples.empty()) throw Error("a .wav file with no audio");
+    w.samples.resize(w.samples.size() / w.channels * w.channels);
+    return w;
 }
 
 }  // namespace rk
