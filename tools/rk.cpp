@@ -192,6 +192,7 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
         {".yed", [](const Bytes& f) { return write_yed(read_yed(f)); }},
         {".yfd", [](const Bytes& f) { return write_yfd(read_yfd(f)); }},
         {".ybd", [](const Bytes& f) { return write_ybd(read_ybd(f)); }},
+        {".ysc", [](const Bytes& f) { return write_ysc(read_ysc(f)); }},
     };
     auto it = rewrites.find(ext);
     if (it == rewrites.end()) { std::printf("no writer for %s\n", ext.c_str()); return 1; }

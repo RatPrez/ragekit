@@ -66,6 +66,7 @@ add_library(ragekit STATIC
     src/materials.cpp
     src/describe.cpp
     src/expression.cpp
+    src/script.cpp
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c

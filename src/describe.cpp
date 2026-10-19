@@ -311,6 +311,18 @@ Fact resource(std::span<const uint8_t> file, const std::string& ext, const Ctx& 
             if (c.opt.verbose)
                 for (const ExpressionTrack& t : e.tracks()) ef.add(fmt("bone %u", t.bone), fmt("track %u, format %u, flags 0x%02X", t.track, t.flags & 0x7F, t.flags & 0x80));
         }
+    } else if (ext == ".ysc") {
+        const Script s = read_ysc(file);
+        root.label = "script";
+        root.value = s.name();
+        root.add("code", fmt("%u bytes", s.code_size()));
+        root.add("parameters / statics", fmt("%u / %u", s.parameter_count(), s.static_count()));
+        if (s.global_count()) root.add("globals", fmt("%u in block %u", s.global_count(), s.global_block()));
+        root.add("globals signature", fmt("0x%08X", s.globals_signature()));
+        root.add("strings", fmt("%u bytes", s.string_size()));
+        Fact& n = root.add("natives", std::to_string(s.native_count()));
+        const auto nat = s.natives();
+        for (size_t i = 0; i < nat.size(); i++) if (c.show(n, i, nat.size())) n.add(std::to_string(i), fmt("0x%016llX", (unsigned long long)nat[i]));
     } else if (ext == ".ybd") {
         const BoundDictionary d = read_ybd(file);
         root.label = "bound dictionary";

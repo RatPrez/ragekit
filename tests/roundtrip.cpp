@@ -1125,12 +1125,16 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             for (size_t i = 0; i < a.bounds.size() && i < b.bounds.size(); i++)
                 if (a.bounds[i] && b.bounds[i]) compare_bound(c, *a.bounds[i], *b.bounds[i], "ybd[" + hash_name(a.hashes[i]) + "]");
             same_root(c, file, w, "ybd", 0x40, {0x08, 0x20, 0x30});
-        } else if (ext == ".yed" || ext == ".yfd") {
+        } else if (ext == ".yed" || ext == ".yfd" || ext == ".ysc") {
             size_t census = 0, census2 = 0;
             std::string where, diff;
             Bytes w;
             RscBlockPtr a, b;
-            if (ext == ".yed") {
+            if (ext == ".ysc") {
+                const Script x = read_ysc(file, &census, &where);
+                w = write_ysc(x); a = x.root; b = read_ysc(w, &census2).root;
+                (void)x.code(); (void)x.natives(); (void)x.strings();
+            } else if (ext == ".yed") {
                 const ExpressionDictionary x = read_yed(file, &census, &where);
                 w = write_yed(x); a = x.root; b = read_yed(w, &census2).root;
             } else {
@@ -1194,7 +1198,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1243,6 +1247,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     else if (ext == ".yed") (void)read_yed(file);
     else if (ext == ".yfd") (void)read_yfd(file);
     else if (ext == ".ybd") (void)read_ybd(file);
+    else if (ext == ".ysc") (void)read_ysc(file);
     else return false;
     return true;
 }

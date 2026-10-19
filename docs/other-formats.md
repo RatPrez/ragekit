@@ -150,3 +150,18 @@ it reads back field for field in both editions) and three in the destruction arc
 does not inflate (above) and two of version 42, an older bound layout ragekit does not read: `read_ybd` and `read_ybn`
 throw for a version other than 43 (until this check a version 42 file read as geometries without vertices; every .ybn
 of both installs is version 43).
+
+## Scripts (`script.h`)
+
+`.ysc` files (1,158 in Legacy, 1,864 in Enhanced; `levels/gta5/script/script_rel.rpf` and the packs') are the compiled
+scripts: a 0x80-byte header (name and its hash, code size, parameter, static, global and native counts, the globals
+signature), the bytecode in pages of 16 KB, the statics' initial values, the globals of the scripts that own a globals
+block (pages of 0x20000 bytes, 16,384 globals each; the count is the low 18 bits of the word at 0x28, the block the
+rest), the native hashes and the strings (pages of 16 KB). In the archives they are the one resource kind stored
+NG-encrypted (by the entry's name and size), which `Rpf::extract` undoes.
+
+`read_ysc` keeps every structure as read (graph.h), `write_ysc` writes it back the same; `Script` gives the header's
+values, the code and strings joined, the statics, and the natives, which are stored rotated: rotated back left by
+(code size + index) & 63 they are the hashes the game's natives are known by (`WAIT` 0x4EDE34FBADD967A6 among the
+first file's). There is no decompiler. Version 12 is Legacy's; Enhanced's base scripts and four of Legacy's `mppilot`
+ones are version 10, the same layout. Every file of both editions reads back with the same graph.
