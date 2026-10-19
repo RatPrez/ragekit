@@ -52,7 +52,10 @@ layout are not kept.
 `manifest.h` is the typed model of `_manifest.ymf`: ityp dependencies, imap dependencies, interiors with their
 collision files, HD texture dictionary bindings and map data groups. `write_ymf` writes the layout CodeWalker writes
 (sections PSIN, PMAP, PSCH) and CodeWalker's `YmfFile` reads it back. Names in a manifest are lower-cased joaat hashes
-(`manifest_hash`). `rk ymf-make` makes the manifest a custom interior resource needs.
+(`manifest_hash`). `rk ymf-make` makes the manifest a custom interior resource needs. The game's own manifests come
+back byte for byte through the PSO container (`read_pso` / `write_pso`); through the typed model they come back with the
+same content but shorter than the game's (by 20 or 40 bytes mostly, up to 8,892 on the big metadata archives'; about
+360 of every fifth file in each edition: the round trip lists them as notes), since `write_ymf` lays the sections out as CodeWalker does, not as the game's tools did.
 
 ## Audio data (.rel)
 
