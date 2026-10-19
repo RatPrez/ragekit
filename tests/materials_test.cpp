@@ -40,6 +40,15 @@ int main() {
     try { read_materials_dat("12.00\nSHORT LINE 1 2 3\n"); } catch (const Error&) { threw = true; }
     check(threw, "a short line throws");
 
+    // a bound's own material id reads as a BoundMaterial: its flag bytes are the material flags' low and high bytes
+    Bound bd;
+    bd.material_index = 112; bd.room_ped_density = 3; bd.unk_flags = kMatSeeThrough | kMatShootThrough; bd.poly_flags = kMatNoDecal >> 8; bd.material_colour_index = 7;
+    const BoundMaterial bm = bd.material();
+    check(bm.type() == 112 && bm.room_id() == 3 && bm.flags() == (kMatSeeThrough | kMatShootThrough | kMatNoDecal) && bm.colour_index() == 7, "Bound::material()");
+    Bound be;
+    be.set_material(bm);
+    check(be.material() == bm && be.unk_flags == bd.unk_flags && be.poly_flags == bd.poly_flags, "Bound::set_material()");
+
     const std::string dir = GameIndex::default_game_dir();
     if (!dir.empty()) {
         const CollisionMaterials g = load_materials(GameIndex::open(dir));

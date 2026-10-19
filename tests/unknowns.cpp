@@ -225,6 +225,12 @@ void topic_bounds(const Walk& w) {
     std::printf("bounds: phBound and phBoundGeometry fields\n");
     std::map<std::string, Hist> h;
     w.each(".ybn", [&](const IndexedFile&, const Bytes& b) { if (auto x = read_ybn(b)) bound_stats(*x, h); });
+    std::map<std::string, Hist> hf;   // the fragments' bounds: other margins and types than the map's
+    w.each(".yft", [&](const IndexedFile&, const Bytes& b) {
+        const Fragment f = read_yft(b);
+        for (const auto& l : f.physics) if (l && l->bound) bound_stats(*l->bound, hf);
+    });
+    for (auto& [k, v] : hf) v.print(("yft " + k).c_str(), 6, k.find("unk9C") == std::string::npos && k.find("unkAC") == std::string::npos);
     for (auto& [k, v] : h) v.print(k.c_str(), 6, k.find("unk9C") == std::string::npos && k.find("unkAC") == std::string::npos);
 }
 
@@ -248,6 +254,145 @@ void topic_fragment(const Walk& w) {
     cc.print("unkCC", 8); btu.print("bone transforms u16", 6); btu_vs.print("bone transforms u16 - count", 6);
     d1.print("lod unknown_data1 size", 6); d2.print("lod unknown_data2 size", 6); uf.print("child unk_float", 8); uv.print("child unk_vec.w", 6);
     b0_minus_children.print("unkB0 - 16 x children", 6);
+}
+
+void verlet_stats(const VerletCloth& v, std::map<std::string, Hist>& h) {
+    for (const ClothEdge& e : v.edges) {
+        if (e.vertex0 >= v.vertices.size() || e.vertex1 >= v.vertices.size()) { h["edge vertex out of range"].add(1); continue; }
+        const Vec3 d = v.vertices[e.vertex1].xyz() - v.vertices[e.vertex0].xyz();
+        const double len2 = (double)d.x * d.x + (double)d.y * d.y + (double)d.z * d.z;
+        h["edge unk4 / length^2"].add(len2 > 1e-12 ? std::round(e.unk4 / len2 * 1000) / 1000 : -1);
+        const bool p0 = e.vertex0 < v.unkE8, p1 = e.vertex1 < v.unkE8;
+        char k[64];
+        std::snprintf(k, sizeof k, "edge unk8, pinned v0 %d v1 %d", p0, p1);
+        h[k].add(e.unk8);
+        h["edge unkC"].add(e.unkC);
+    }
+    h["verlet unkE8 <= vertices"].add(v.unkE8 <= v.vertices.size());
+    h["verlet unk148 - ceil(vertices / 32)"].add((double)v.unk148 - std::ceil(v.vertices.size() / 32.0));
+    h["verlet unkFA"].add(v.unkFA); h["verlet unk158"].add(v.unk158); h["verlet unkA8"].add(v.unkA8); h["verlet unkAC"].add(v.unkAC);
+    h["verlet unk3C"].add(v.unk3C); h["verlet unk4C"].add(v.unk4C);
+    size_t nan_w = 0;
+    for (const Vec4& x : v.vertices) { uint32_t u; std::memcpy(&u, &x.w, 4); nan_w += u == 0x7FC00001; }
+    h["verlet vertices with w 0x7FC00001 (share)"].add(v.vertices.empty() ? -1 : std::round(100.0 * nan_w / v.vertices.size()));
+}
+
+void controller_stats(const ClothController& c, std::map<std::string, Hist>& h, const char* kind) {
+    h[std::string(kind) + " controller unk78"].add(c.unk78);
+    for (const auto& v : c.verlet) if (v) verlet_stats(*v, h);
+    if (c.bridge && c.verlet[0]) {   // LOD 0's per-vertex values against the vertex being pinned
+        const auto& br = *c.bridge;
+        const uint32_t pinned = c.verlet[0]->pinned_count;
+        for (size_t i = 0; i < br.unk20[0].size(); i++) h[std::string(kind) + (i < pinned ? " bridge unk20, pinned" : " bridge unk20, free")].add(br.unk20[0][i]);
+        for (size_t i = 0; i < br.unk60[0].size(); i++) h[std::string(kind) + (i < pinned ? " bridge unk60, pinned" : " bridge unk60, free")].add(br.unk60[0][i]);
+        for (size_t i = 0; i < br.unkA0[0].size(); i++) h[std::string(kind) + (i < pinned ? " bridge unkA0, pinned" : " bridge unkA0, free")].add(br.unkA0[0][i]);
+    }
+    if (c.bridge)
+        for (int l = 0; l < kClothLods; l++) {
+            for (float x : c.bridge->unk20[l]) h[std::string(kind) + " bridge unk20"].add(x);
+            for (float x : c.bridge->unk60[l]) h[std::string(kind) + " bridge unk60"].add(x);
+            for (float x : c.bridge->unkA0[l]) h[std::string(kind) + " bridge unkA0"].add(x);
+            h[std::string(kind) + " bridge unk20 count - vertices"].add((double)c.bridge->unk20[l].size() - c.bridge->vertex_counts[l]);
+        }
+}
+
+void topic_cloth(const Walk& w) {
+    std::printf("cloth: the cloth structures' unnamed fields over the fragments with cloth and the cloth dictionaries\n");
+    std::map<std::string, Hist> h;
+    w.each(".yft", [&](const IndexedFile& file, const Bytes& b) {
+        const Fragment f = read_yft(b);
+        std::string stem = w.gi.file_name(file);
+        stem = stem.substr(0, stem.rfind('.'));
+        const auto arch = w.gi.archetype(stem);
+        for (const EnvironmentCloth& e : f.cloths) {
+            if (e.controller) controller_stats(*e.controller, h, "env");
+            if (e.controller && arch)
+                for (const auto& v : e.controller->verlet) if (v) h["verlet unkA8 - archetype lodDist"].add(std::round(v->unkA8 - arch->lod_dist));
+            h["env unk78"].add(e.unk78); h["env unk60 count"].add((double)e.unk60.size());
+            if (e.tuning) {
+                const ClothTuning& t = *e.tuning;
+                h["tuning unk10"].add(t.unk10); h["tuning unk14"].add(t.unk14); h["tuning unk20"].add(t.unk20); h["tuning unk24"].add(t.unk24);
+                h["tuning unk28"].add(t.unk28); h["tuning unk2C"].add(t.unk2C); h["tuning flags"].add(t.flags); h["tuning unk34"].add(t.unk34);
+                h["tuning unk38"].add(t.unk38); h["tuning unk3C"].add(t.unk3C);
+                char k[48]; std::snprintf(k, sizeof k, "env unk78 with tuning flags 0x%X", t.flags); h[k].add(e.unk78);
+            }
+        }
+    });
+    w.each(".yld", [&](const IndexedFile&, const Bytes& b) {
+        for (const CharacterCloth& c : read_yld(b).cloths) {
+            h["char unk10 count"].add((double)c.unk10.size()); h["char unk90 count"].add((double)c.unk90.size());
+            for (uint32_t x : c.unk90) h["char unk90"].add(x);
+            if (!c.controller) continue;
+            controller_stats(*c.controller, h, "char");
+            h["char controller unkA0"].add(c.controller->unkA0); h["char controller unkDC"].add(c.controller->unkDC);
+            h["char controller unkB0 count - bone ids"].add((double)c.controller->unkB0.size() - c.controller->bone_ids.size());
+            for (uint32_t x : c.controller->unkB0) h["char controller unkB0"].add(x);
+        }
+    });
+    for (auto& [k, v] : h) v.print(k.c_str(), 6, k.find("unk3C") != std::string::npos || k.find("unk4C") != std::string::npos || k.find("flags") != std::string::npos);
+}
+
+void topic_pso(const Walk& w) {
+    std::printf("pso: the unnamed fields of the schema and the data map over the PSO files\n");
+    std::map<std::string, Hist> h;
+    for (const char* ext : {".ymt", ".ymf", ".cut", ".pso", ".meta", ".ypdb"})
+        w.each(ext, [&](const IndexedFile&, const Bytes& b) {
+            if (!is_pso(b)) return;
+            const Pso p = read_pso(b);
+            h["map unknown"].add(p.map.unknown);
+            h["map extended"].add(p.map.extended);
+            for (int i = 0; i < 4; i++) if (p.map.extended) h["map ext[" + std::to_string(i) + "]"].add(p.map.ext[i]);
+            for (const PsoBlock& blk : p.map.blocks) {
+                h["block unknown"].add(blk.unknown);
+                h["block unknown == offset"].add(blk.unknown == blk.offset);
+            }
+            for (const PsoElement& e : p.schema.elements) {
+                if (e.is_enum) continue;
+                h["struct unknown"].add(e.st.unknown);
+                if (e.st.unknown) h["struct unknown != 0: " + pso_name(e.name)].add(e.st.unknown);
+                h["struct unknown_c"].add(e.st.unknown_c);
+                h["struct unknown_c - size"].add((double)e.st.unknown_c - e.st.size);
+                for (const PsoStructEntry& se : e.st.entries) h["entry subtype"].add(se.subtype);
+            }
+        });
+    for (auto& [k, v] : h) v.print(k.c_str(), 8, true);
+}
+
+void topic_metaheader(const Walk& w) {
+    std::printf("metaheader: the meta container's unnamed fields over the RSC7 meta files\n");
+    std::map<std::string, Hist> h;
+    for (const char* ext : {".ytyp", ".ymap", ".ymt"})
+        w.each(ext, [&](const IndexedFile&, const Bytes& b) {
+            if (!rsc::Resource::is_resource(b)) return;
+            const Meta m = read_meta(b);
+            h["header unknown17"].add(m.unknown17); h["header unknown18"].add(m.unknown18); h["header unknown4e"].add(m.unknown4e);
+            for (int i = 0; i < 8; i++) h["header unknown50[" + std::to_string(i) + "]"].add(m.unknown50[i]);
+            h["header version"].add(m.header_version);
+            for (const MetaStruct& s : m.structs) {
+                h["struct unknown8"].add(s.unknown8); h["struct unknownC"].add(s.unknownC); h["struct unknown1C"].add(s.unknown1C);
+                char k[64]; std::snprintf(k, sizeof k, "struct unknown8 = %u: size %% 16", s.unknown8); h[k].add(s.size % 16);
+                // the alignment the entries need: 16 for vectors, 8 for arrays and pointers, 4 / 2 / 1 for the plain types
+                uint32_t need = 1;
+                for (const MetaEntry& e : s.entries) {
+                    h["entry unknown9"].add(e.unknown9);
+                    char t[48]; std::snprintf(t, sizeof t, "entry unknown9 on type 0x%02X", e.type); h[t].add(e.unknown9);
+                    if (e.name == 0x100) continue;
+                    uint32_t a = 4;
+                    switch (e.type) {
+                        case metatype::Float_XYZ: case metatype::Float_XYZW: a = 16; break;
+                        case metatype::Array: case metatype::CharPointer: case metatype::DataBlockPointer: case metatype::StructurePointer: a = 8; break;
+                        case metatype::SignedShort: case metatype::UnsignedShort: case metatype::ShortFlags: a = 2; break;
+                        case metatype::Boolean: case metatype::SignedByte: case metatype::UnsignedByte: case metatype::ByteEnum: case metatype::ArrayOfBytes: case metatype::ArrayOfChars: a = 1; break;
+                        case metatype::Structure: { const MetaStruct* sub = m.find_struct(e.ref_key); a = sub ? 1u << (sub->unknown8 >> 8) : 16; break; }
+                        default: break;
+                    }
+                    need = std::max(need, a);
+                }
+                h["struct unknown8: (1 << (unknown8 >> 8)) == the entries' alignment"].add((1u << (s.unknown8 >> 8)) == need);
+            }
+            for (const MetaEnum& e : m.enums) h["enum unknown14"].add(e.unknown14);
+        });
+    for (auto& [k, v] : h) v.print(k.c_str(), 8, true);
 }
 
 // Which structures of the meta files the typed map model (map.h) reads into fields and which only come back through
@@ -314,6 +459,9 @@ int main(int argc, char** argv) {
             {"bounds", topic_bounds},
             {"fragment", topic_fragment},
             {"meta", topic_meta},
+            {"cloth", topic_cloth},
+            {"pso", topic_pso},
+            {"metaheader", topic_metaheader},
         };
         for (const std::string& t : topics) {
             if (t.rfind("list.", 0) == 0) {   // list.<ext>: the paths of every file of a kind

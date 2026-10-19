@@ -122,6 +122,7 @@ rsc::write_file("prop_copy.ydr", write_ydr(d));
 - [The game index and the world index](docs/game-index.md)
 - [The rk tool](docs/rk-tool.md)
 - [How it is checked](docs/testing.md)
+- [Unnamed fields](docs/unknowns.md): what the game's files say about the fields ragekit does not name
 - [ragekit and CodeWalker](docs/codewalker-comparison.md): format coverage side by side
 
 ## How it is checked

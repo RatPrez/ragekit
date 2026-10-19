@@ -55,11 +55,15 @@ struct MetaEntry {
 struct MetaStruct {
     uint32_t name = 0;
     uint32_t key = 0;
-    uint32_t unknown8 = 0;    // 768 or 1024 in game files
-    uint32_t unknownC = 0;
+    uint32_t unknown8 = 0;    // the alignment's log2 << 8: 1024 (16 bytes), 768 (8), 512 (4), 256 (2), 0 (1); see alignment()
+    uint32_t unknownC = 0;    // 0 in every game file
     int32_t  size = 0;        // bytes per instance
-    uint16_t unknown1C = 0;
+    uint16_t unknown1C = 0;   // 0 in every game file
     std::vector<MetaEntry> entries;
+
+    /// The structure's alignment in bytes (1 << (unknown8 >> 8)): what its widest field needs on 97.8 % of the game's
+    /// 39,225 descriptions (docs/unknowns.md).
+    uint32_t alignment() const { return 1u << ((unknown8 >> 8) & 31); }
 };
 struct MetaEnumEntry { uint32_t name = 0; int32_t value = 0; };
 struct MetaEnum {

@@ -102,12 +102,26 @@ struct Bound {
     Vec3 box_max, box_min, box_center, sphere_center;
     float margin = 0.04f;
     uint32_t unk3C = 1;              // phBound::m_RefCount: 1, or 2 in fragments (where the bound is shared)
+    // 0x58..0x5F: the bound's material id, laid out as a BoundMaterial (material(), set_material()): unk_flags and
+    // poly_flags are the low and high bytes of its BoundMaterialFlags (0 on every .ybn bound; 0x02, 0x10, 0x12, 0x40,
+    // 0x54 ... on fragments' parts)
     uint8_t material_index = 0, procedural_id = 0, room_ped_density = 0, unk_flags = 0;
     uint8_t poly_flags = 0, material_colour_index = 0;
-    uint16_t unk5E = 0;              // the upper half of the 64-bit material id (m_MaterialID1)
+    uint16_t unk5E = 0;              // the upper half of the 64-bit material id (m_MaterialID1): 0 in every game file
     Vec3 inertia;
     float volume = 0;
     float unk70 = 0;                 // capsule, disc, cylinder (128 bytes): a capsule's half height (phBoundCapsule::m_CapsuleHalfHeight)
+
+    BoundMaterial material() const {
+        BoundMaterial m;
+        m.data1 = (uint32_t)material_index | (uint32_t)procedural_id << 8 | (uint32_t)room_ped_density << 16 | (uint32_t)unk_flags << 24;
+        m.data2 = (uint32_t)poly_flags | (uint32_t)material_colour_index << 8 | (uint32_t)unk5E << 16;
+        return m;
+    }
+    void set_material(const BoundMaterial& m) {
+        material_index = (uint8_t)m.data1; procedural_id = (uint8_t)(m.data1 >> 8); room_ped_density = (uint8_t)(m.data1 >> 16); unk_flags = (uint8_t)(m.data1 >> 24);
+        poly_flags = (uint8_t)m.data2; material_colour_index = (uint8_t)(m.data2 >> 8); unk5E = (uint16_t)(m.data2 >> 16);
+    }
 
     // Geometry / GeometryBVH
     struct Geometry {

@@ -16,10 +16,13 @@ struct Bound; // bounds.h
 
 constexpr int kClothLods = 3;
 
-/// A distance constraint between two simulated vertices (16 bytes).
+/// A distance constraint between two simulated vertices (16 bytes). The fields named from their statistics (docs:
+/// models-and-textures.md, Cloth) keep their old unk names as aliases.
 struct ClothEdge {
     uint16_t vertex0 = 0, vertex1 = 0;
-    float unk4 = 0, unk8 = 0, unkC = 0;
+    union { float rest_length2 = 0; float unk4; };   // the squared distance of the two vertices at rest
+    union { float weight0 = 0; float unk8; };        // vertex0's share of a correction: 0 when it is pinned, 1 when vertex1 is, else 0.5
+    float unkC = 0;                                  // 0.25 on every edge, 0 on the padding slots (vertices 0 - 0)
 };
 
 /// phVerletCloth: the simulated mesh of one LOD.
@@ -30,11 +33,13 @@ struct VerletCloth {
     std::vector<ClothEdge> custom_edges;      // rare
     std::shared_ptr<Bound> bound;             // environment cloth: a composite of capsules and planes
     Vec3 bbox_min, bbox_max;
-    uint32_t unk3C = 0, unk4C = 0;            // 0x7f7fffff / 0xff7fffff in fragments
-    float unkA8 = 9999, unkAC = 9999;
-    uint32_t unkE8 = 0;
-    uint16_t unkFA = 0, unk148 = 0;
-    float unk158 = 1;
+    uint32_t unk3C = 0, unk4C = 0;            // the box's W lanes: FLT_MAX / -FLT_MAX (0x7f7fffff / 0xff7fffff) in fragments, 0 in .yld
+    union { float lod_distance = 9999; float unkA8; };   // the archetype's lodDist (589 of 676 fragments)
+    float unkAC = 9999;                       // 0 in every fragment; 9999, 86, 48, 60, 216 ... in .yld
+    union { uint32_t pinned_count = 0; uint32_t unkE8; };   // the first pinned_count vertices are pinned (edges' weight0 says so)
+    uint16_t unkFA = 0;                       // 0, or 2 on 108 of 749 cloths
+    union { uint16_t vertex_words = 0; uint16_t unk148; };   // ceil(vertices / 32): the words of a bit per vertex
+    float unk158 = 1;                         // 1 on 83 %; 2, 1.5, 1.2, 0.35, 5 ... on the rest
 };
 
 /// clothBridgeSimGfx: per LOD, what ties the simulated vertices to the drawn ones.
@@ -103,8 +108,8 @@ struct ClothTuning {
 struct EnvironmentCloth {
     std::optional<ClothController> controller;
     std::optional<ClothTuning> tuning;
-    std::vector<uint32_t> unk60;
-    uint32_t unk78 = 0;                       // 0, or 16 / 48 with a tuning
+    std::vector<uint32_t> unk60;              // empty but on one cloth (554 words)
+    union { uint32_t flags = 0; uint32_t unk78; };   // 16 when it has a tuning, 48 (16 | 32) when the tuning's flags hold 8
 };
 
 struct ClothDictionary {
