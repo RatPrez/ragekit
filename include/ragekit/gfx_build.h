@@ -234,6 +234,42 @@ struct TagWalk {
 };
 TagWalk all_tags(const GfxMovie& m);
 
+// ---- the game's interior minimaps (scaleform_minimap.rpf/int<joaat of the MLO archetype's name, decimal>.gfx; docs/other-formats.md)
+
+/// The parts of one of the game's interior minimap movies that a new one copies as they are: the file attributes, the
+/// metadata and the background, the main timeline's DoAction and the two classes it registers (an empty sprite exported as
+/// `__Packages.com.rockstargames.gtav.minimap.INTERIORS` / `...ui.game.GameInterface` and its DoInitAction, whose first two
+/// bytes name that sprite: the only bytes a new movie changes).
+struct InteriorMinimapTemplate {
+    Bytes frame;                        // the frame rectangle, rate and count (20 frames)
+    ExporterInfo exporter;              // version, flags, bitmap format (the name and code offsets are the new movie's)
+    GfxTag file_attributes, metadata, background, do_action;
+    struct Class { std::string name; GfxTag init_action; };
+    std::vector<Class> classes;
+};
+/// Throws rk::Error when the movie is not laid out as an interior minimap.
+InteriorMinimapTemplate interior_minimap_template(const GfxMovie& game_movie);
+
+struct InteriorMinimapLevel {
+    std::string name;                   // level_0, level_1 ... level_u1
+    Shape shape;                        // its id is set by make_interior_minimap
+    uint16_t shape_depth = 1;           // the depth of the shape in the level's sprite
+};
+/// A movie laid out as the game's: per level a shape and a sprite holding it, the holder sprite placing the levels (named,
+/// alpha 0, depth 1, 2 ...) exported as `archetype`, the template's class tags, an empty first frame, then the label
+/// INT<hash> and the holder placed as `interior` with `scale` (16.16) and a ratio of 1, 20 frames in all. The ExporterInfo
+/// names the movie int<hash> and lists the code offsets of the ActionScript tags as the game's do: each payload's offset
+/// from the end of the 8-byte header in the movie without the ExporterInfo tag.
+GfxMovie make_interior_minimap(const InteriorMinimapTemplate& t, const std::string& archetype, std::vector<InteriorMinimapLevel> levels,
+                               int32_t scale = 6554);
+/// "int<joaat_lower(archetype)>" (the file's name without .gfx).
+std::string interior_minimap_name(const std::string& archetype);
+/// The tag codes of a movie (sprites' own tags in brackets) with each level's shape-and-sprite pair collapsed to one "L":
+/// two interior minimaps laid out alike give the same string whatever their number of levels.
+std::string interior_minimap_skeleton(const GfxMovie& m);
+/// The names the holder sprite gives its levels, in order.
+std::vector<std::string> interior_minimap_levels(const GfxMovie& m);
+
 }  // namespace gfx
 
 }  // namespace rk

@@ -240,6 +240,17 @@ rooms -16.60 .. 16.57 m), `m25_1_int_tycoon_smoke_heli` 20.1 / 19.8, `V_Shop_247
 One movie serves every instance of the archetype (`v_shop_247` is placed 20 times at different headings), so the game
 turns and moves it by the instance (GUESS, from that and the lack of any position in the movies).
 
+`interior_minimap_template(movie)` takes from one of these movies what a new one copies as it is (the file attributes,
+metadata, background, the DoAction and the two classes' DoInitAction), and `make_interior_minimap(template, archetype,
+levels, scale)` lays a new movie out as the game's: the level shapes and sprites, the holder placing them named and at
+alpha 0, the export, the classes (only the first two bytes of each DoInitAction, the sprite it belongs to, change), an
+empty first frame, the `INT<hash>` label and the `interior` placement, 20 frames. The ExporterInfo's code offsets are each
+ActionScript payload's offset from the end of the 8-byte header in the movie without the ExporterInfo tag (the SWF Flash
+wrote), and Flash writes sprites, exports, frame labels and named placements with the long length form even when short.
+Made again from `int2604216443.gfx`'s template and its own shape, the 24/7's movie comes back as the game's file byte for
+byte; `interior_minimap_skeleton` (the tag codes, each level's shape and sprite as one `L`) is the same for 285 of the
+298 interior minimaps of Legacy (`rk_gfx_test`).
+
 ## Pose matchers (`posematcher.h`)
 
 The binary `.ypdb` files (56 in Legacy, `anim/posematchers.rpf`; the first byte 0x1A tells the game's deserializer the

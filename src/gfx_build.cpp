@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include "ragekit/error.h"
+#include "ragekit/hash.h"
 
 namespace rk::gfx {
 
@@ -840,6 +841,192 @@ TagWalk all_tags(const GfxMovie& m) {
         }
     };
     walk(m.tags, 0, 0);
+    return out;
+}
+
+// ---- interior minimaps
+
+namespace {
+
+size_t tag_size(const GfxTag& t) { return (t.long_form || t.payload.size() >= 0x3F ? 6 : 2) + t.payload.size(); }
+
+std::string place_name(const GfxTag& t) {
+    if (t.code != kPlaceObject2 && t.code != kPlaceObject3) return {};
+    return read_place(t).name;
+}
+
+}  // namespace
+
+std::string interior_minimap_name(const std::string& archetype) { return "int" + std::to_string(joaat_lower(archetype)); }
+
+InteriorMinimapTemplate interior_minimap_template(const GfxMovie& m) {
+    InteriorMinimapTemplate t;
+    t.frame = m.frame;
+    bool interior = false, have_exporter = false, have_action = false;
+    for (size_t i = 0; i < m.tags.size(); i++) {
+        const GfxTag& g = m.tags[i];
+        switch (g.code) {
+        case kExporterInfo: t.exporter = read_exporter_info(g); have_exporter = true; break;
+        case kFileAttributes: t.file_attributes = g; break;
+        case kMetadata: t.metadata = g; break;
+        case kSetBackgroundColor: t.background = g; break;
+        case 12: if (!have_action) { t.do_action = g; have_action = true; } break;   // DoAction
+        case kExportAssets:
+            if (g.payload.size() > 4 && i + 1 < m.tags.size() && m.tags[i + 1].code == 59) {   // a class: exported as __Packages.<name>, its DoInitAction next
+                const std::string name((const char*)g.payload.data() + 4);
+                if (name.rfind("__Packages.", 0) == 0) t.classes.push_back({name, m.tags[i + 1]});
+            }
+            break;
+        default:
+            if (place_name(g) == "interior") interior = true;
+        }
+    }
+    if (!have_exporter || !have_action || t.classes.empty() || !interior || t.file_attributes.payload.empty())
+        throw Error("gfx: not laid out as an interior minimap (ExporterInfo, DoAction, the classes and the `interior` placement)");
+    for (const auto& c : t.classes)
+        if (c.init_action.payload.size() < 2) throw Error("gfx: a DoInitAction without its sprite");
+    return t;
+}
+
+GfxMovie make_interior_minimap(const InteriorMinimapTemplate& t, const std::string& archetype, std::vector<InteriorMinimapLevel> levels, int32_t scale) {
+    if (levels.empty()) throw Error("gfx: an interior minimap without a level");
+    GfxMovie mv;
+    mv.version = 8;
+    mv.frame = t.frame;
+    const uint16_t frames = (uint16_t)(t.frame.size() >= 2 ? t.frame[t.frame.size() - 2] | t.frame[t.frame.size() - 1] << 8 : 20);
+    std::vector<GfxTag> tags;   // everything after the ExporterInfo
+    tags.push_back(t.file_attributes);
+    if (!t.metadata.payload.empty()) tags.push_back(t.metadata);
+    if (!t.background.payload.empty()) tags.push_back(t.background);
+    const uint16_t n = (uint16_t)levels.size(), holder = (uint16_t)(2 * n + 1);
+    for (uint16_t i = 0; i < n; i++) {
+        levels[i].shape.id = (uint16_t)(2 * i + 1);
+        tags.push_back(shape_tag(levels[i].shape));
+        Sprite s;
+        s.id = (uint16_t)(2 * i + 2);
+        Place p;
+        p.depth = levels[i].shape_depth;
+        p.character = levels[i].shape.id;
+        p.matrix = Matrix{};
+        s.tags = {place_tag(p), show_frame_tag(), end_tag()};
+        tags.push_back(sprite_tag(s));
+    }
+    Sprite h;
+    h.id = holder;
+    for (uint16_t i = 0; i < n; i++) {
+        Place p;
+        p.depth = (uint16_t)(i + 1);
+        p.character = (uint16_t)(2 * i + 2);
+        p.matrix = Matrix{};
+        ColourTransform c;
+        c.has_mul = true;
+        c.mul[3] = 0;   // hidden: the game shows the player's level
+        p.colour = c;
+        p.name = levels[i].name;
+        h.tags.push_back(place_tag(p));
+    }
+    h.tags.push_back(show_frame_tag());
+    h.tags.push_back(end_tag());
+    tags.push_back(sprite_tag(h));
+    tags.push_back(export_assets_tag({{holder, archetype}}));
+    std::vector<size_t> code_tags = {tags.size()};
+    tags.push_back(t.do_action);
+    for (size_t k = 0; k < t.classes.size(); k++) {
+        const uint16_t id = (uint16_t)(holder + 1 + k);
+        Sprite e;
+        e.id = id;
+        e.frame_count = 0;
+        e.tags = {end_tag()};
+        tags.push_back(sprite_tag(e));
+        tags.push_back(export_assets_tag({{id, t.classes[k].name}}));
+        GfxTag init = t.classes[k].init_action;
+        init.payload[0] = (uint8_t)id;
+        init.payload[1] = (uint8_t)(id >> 8);
+        code_tags.push_back(tags.size());
+        tags.push_back(std::move(init));
+    }
+    tags.push_back(show_frame_tag());
+    tags.push_back(frame_label_tag("INT" + std::to_string(joaat_lower(archetype))));
+    Place ip;
+    ip.depth = 1;
+    ip.character = holder;
+    Matrix m;
+    m.has_scale = true;
+    m.sx = m.sy = scale;
+    ip.matrix = m;
+    ip.ratio = 1;
+    ip.name = "interior";
+    tags.push_back(place_tag(ip));
+    for (int f = 1; f < frames; f++) tags.push_back(show_frame_tag());
+    tags.push_back(end_tag());
+    // Flash writes the length of these in the long form even when short: sprites, exports, frame labels and named placements (in the sprites too)
+    std::function<void(GfxTag&)> long_forms = [&](GfxTag& g) {
+        if (g.code == kDefineSprite) {
+            Sprite s = read_sprite(g);
+            for (GfxTag& in : s.tags) long_forms(in);
+            g = sprite_tag(s);
+            g.long_form = true;
+        } else if (g.code == kExportAssets || g.code == kFrameLabel || (g.code == kPlaceObject2 && !place_name(g).empty())) {
+            g.long_form = true;
+        }
+    };
+    for (GfxTag& g : tags) long_forms(g);
+    // the code offsets: each ActionScript payload's offset from the end of the header, as if the ExporterInfo were not there
+    ExporterInfo ei = t.exporter;
+    ei.prefix.clear();
+    ei.swf_name = interior_minimap_name(archetype);
+    ei.code_offsets.clear();
+    size_t at = t.frame.size(), next = 0;
+    for (size_t i = 0; i < tags.size(); i++) {
+        if (next < code_tags.size() && code_tags[next] == i) { ei.code_offsets.push_back((uint32_t)(at + tag_size(tags[i]) - tags[i].payload.size())); next++; }
+        at += tag_size(tags[i]);
+    }
+    mv.tags.push_back(exporter_info_tag(ei));
+    mv.tags.insert(mv.tags.end(), tags.begin(), tags.end());
+    return mv;
+}
+
+std::string interior_minimap_skeleton(const GfxMovie& m) {
+    std::vector<std::string> tok;
+    for (size_t i = 0; i < m.tags.size(); i++) {
+        const GfxTag& g = m.tags[i];
+        const bool shape = g.code == kDefineShape || g.code == kDefineShape2 || g.code == kDefineShape3 || g.code == kDefineShape4;
+        if (shape && i + 1 < m.tags.size() && m.tags[i + 1].code == kDefineSprite) {   // a level: its shape and the sprite holding it
+            if (tok.empty() || tok.back() != "L") tok.push_back("L");
+            i++;
+            continue;
+        }
+        std::string s = std::to_string(g.code);
+        if (g.code == kDefineSprite) {
+            const Sprite sp = read_sprite(g);
+            s += "[";
+            std::string last;
+            for (const GfxTag& in : sp.tags) {
+                const std::string c = std::to_string(in.code);
+                if (c == last && c == "26") continue;   // the levels' placements: one per level
+                s += (s.back() == '[' ? "" : " ") + c;
+                last = c;
+            }
+            s += "]";
+        }
+        if (g.code == kShowFrame && !tok.empty() && (tok.back() == "1" || tok.back() == "1+")) { tok.back() = "1+"; continue; }
+        tok.push_back(s);
+    }
+    std::string out;
+    for (const std::string& t : tok) out += (out.empty() ? "" : " ") + t;
+    return out;
+}
+
+std::vector<std::string> interior_minimap_levels(const GfxMovie& m) {
+    std::vector<std::string> out;
+    std::map<uint16_t, Sprite> sprites;
+    uint16_t holder = 0;
+    for (const GfxTag& g : m.tags) {
+        if (g.code == kDefineSprite) { Sprite s = read_sprite(g); sprites[s.id] = s; }
+        else if (g.code == kPlaceObject2 || g.code == kPlaceObject3) { const Place p = read_place(g); if (p.name == "interior" && p.character) holder = *p.character; }
+    }
+    if (auto s = sprites.find(holder); s != sprites.end())
+        for (const GfxTag& g : s->second.tags) if (const std::string n = place_name(g); !n.empty()) out.push_back(n);
     return out;
 }
 

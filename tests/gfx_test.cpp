@@ -172,9 +172,70 @@ static void game_movies(const std::string& dir) {
     check(nbad == 0, "every shape, place, sprite, label and exporter info comes back byte for byte" + (first_bad.empty() ? "" : " (first: " + first_bad + ")"));
 }
 
+// The game's 24/7 minimap (int2604216443.gfx = V_Shop_247) as a template: its class tags copied byte for byte, and the movie made again from the
+// template and its own shape comes back as the game's file byte for byte; every interior minimap of the install has one of a few skeletons.
+static void interior_minimaps(const std::string& dir) {
+    GameIndex gi;
+    try { gi = GameIndex::open(dir); } catch (const std::exception& e) { std::printf("skip  no game install (%s)\n", e.what()); return; }
+    const auto f = gi.resolve_file("int2604216443", ".gfx");
+    check((bool)f, "the 24/7's minimap int2604216443.gfx found");
+    if (!f) return;
+    const Bytes file = gi.extract(*f);
+    const GfxMovie src = read_gfx(file);
+    const InteriorMinimapTemplate t = interior_minimap_template(src);
+    const GfxTag* src_action = nullptr;
+    std::vector<const GfxTag*> src_inits;
+    const GfxTag* src_shape = nullptr;
+    uint16_t depth = 1;
+    int32_t scale = 0;
+    for (const GfxTag& g : src.tags) {
+        if (g.code == 12 && !src_action) src_action = &g;
+        if (g.code == 59) src_inits.push_back(&g);
+        if (g.code == kDefineShape2 && !src_shape) src_shape = &g;
+        if (g.code == kDefineSprite) for (const GfxTag& in : read_sprite(g).tags) if (in.code == kPlaceObject2 && read_place(in).character == uint16_t(1)) depth = read_place(in).depth;
+        if (g.code == kPlaceObject2 && read_place(g).name == "interior") scale = read_place(g).matrix->sx;
+    }
+    bool same = src_action && t.do_action.payload == src_action->payload && t.classes.size() == src_inits.size() && t.classes.size() == 2;
+    for (size_t i = 0; same && i < t.classes.size(); i++) same = t.classes[i].init_action.payload == src_inits[i]->payload;
+    check(same, "the template's DoAction and the two classes' DoInitAction are the game's bytes");
+    check(t.classes.size() == 2 && t.classes[0].name == "__Packages.com.rockstargames.gtav.minimap.INTERIORS", "the INTERIORS class");
+    InteriorMinimapLevel l;
+    l.name = "level_0";
+    l.shape = read_shape(*src_shape);
+    l.shape_depth = depth;
+    const GfxMovie made = make_interior_minimap(t, "V_Shop_247", {l}, scale);
+    const Bytes again = write_gfx(made);
+    size_t at = 0;
+    while (at < again.size() && at < file.size() && again[at] == file[at]) at++;
+    check(again == file, "the 24/7's movie made again from the template and its shape is the game's file byte for byte (" + std::to_string(again.size()) + " / " +
+                             std::to_string(file.size()) + " bytes, the same up to " + std::to_string(at) + ")");
+    check(interior_minimap_name("V_Shop_247") == "int2604216443", "the file name is int<joaat of the lower-case name>");
+    // a two-level movie of ours against Michael's house (two levels)
+    const auto mf = gi.resolve_file("int3273555063", ".gfx");
+    if (mf) {
+        const GfxMovie michael = read_gfx(gi.extract(*mf));
+        InteriorMinimapLevel l1 = l;
+        l1.name = "level_1";
+        const GfxMovie two = make_interior_minimap(t, "test_two", {l, l1});
+        check(interior_minimap_skeleton(two) == interior_minimap_skeleton(michael) && interior_minimap_levels(michael) == std::vector<std::string>{"level_0", "level_1"},
+              "a two-level movie has Michael's tag order (" + interior_minimap_skeleton(michael) + ")");
+    }
+    std::map<std::string, int> skeletons;
+    for (const IndexedFile& e : gi.files()) {
+        if (gi.extension(e) != ".gfx") continue;
+        const std::string n = gi.file_name(e);
+        if (n.rfind("int", 0) != 0 || n.size() < 8 || !std::isdigit((unsigned char)n[3])) continue;
+        try { skeletons[interior_minimap_skeleton(read_gfx(gi.extract(e)))]++; } catch (const std::exception&) { skeletons["(unreadable)"]++; }
+    }
+    const std::string ours = interior_minimap_skeleton(made);
+    std::printf("      %zu skeletons over the interior minimaps; ours (%s) is shared by %d\n", skeletons.size(), ours.c_str(), skeletons[ours]);
+    check(skeletons[ours] >= 100, "our layout is the most common of the game's interior minimaps");
+}
+
 int main(int argc, char** argv) {
     built_movie();
     game_movies(argc > 1 ? argv[1] : GameIndex::default_game_dir());
+    interior_minimaps(argc > 1 ? argv[1] : GameIndex::default_game_dir());
     std::printf(failures ? "%d failures\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }
