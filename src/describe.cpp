@@ -392,6 +392,13 @@ Fact describe(std::span<const uint8_t> file, const std::string& name, const Desc
             root.add(j.members[i].first, m.type == JsonValue::Type::Object ? fmt("%zu members", m.members.size()) : m.type == JsonValue::Type::Array ? fmt("%zu items", m.items.size())
                                                                                                                     : m.type == JsonValue::Type::Bool ? (m.boolean ? "true" : "false") : m.text);
         }
+    } else if (ext == ".ypdb" && is_pose_matcher(file)) {
+        const PoseMatcher p = read_ypdb(file);
+        root = {"pose matcher", fmt("%zu samples, %zu bone tags, signature 0x%08X", p.samples.size(), p.bone_tags.size(), p.signature), {}};
+        for (size_t i = 0; i < p.samples.size(); i++)
+            if (c.show(root, i, p.samples.size()))
+                root.add(fmt("sample %zu", i), fmt("clip %s of %s at %.3f s, %zu points", hash_name(p.samples[i].clip).c_str(), hash_name(p.samples[i].clip_set).c_str(),
+                                                  p.samples[i].offset, p.samples[i].cloud.points.size()));
     } else if (is_gfx(file)) {
         const GfxMovie m = read_gfx(file);
         root = {"Scaleform movie", fmt("version %u%s, %zu tags, %u frames at %.1f fps", m.version, m.compressed ? ", compressed" : "", m.tags.size(), m.frame_count(), m.frame_rate()), {}};

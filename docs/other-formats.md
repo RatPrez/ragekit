@@ -182,3 +182,11 @@ rectangle and every tag's bytes (code, payload, and whether the length was writt
 uncompressed movie is written back byte for byte and the compressed one as the same movie; `exports()` lists the
 symbol names of its ExportAssets tags. Every movie of both editions reads back. The ActionScript (DoAction / DoABC
 tags) and the shapes stay as bytes.
+
+## Pose matchers (`posematcher.h`)
+
+The binary `.ypdb` files (56 in Legacy, `anim/posematchers.rpf`; the first byte 0x1A tells the game's deserializer the
+file is binary, not text) hold pose matchers: samples, each a clip (clip set and clip hashes and a time in it) with the
+point cloud of bone positions and weights the game compares a ped's pose against, then the bone tags, a weight set,
+two values CodeWalker leaves unnamed (1/30 and 1) and the signature again. `read_ypdb` / `write_ypdb` come back byte
+for byte on every file of both editions.

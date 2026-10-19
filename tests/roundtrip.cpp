@@ -941,6 +941,7 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
     const Game game = game_of_file(ext, file);
     if (ext == ".rel" || is_rel_ext(ext)) return test_rel(label, file);
     if (ext == ".gxt2") return test_exact(label, file, "text table", [](const Bytes& f) { return write_gxt2(read_gxt2(f)); });
+    if (ext == ".ypdb" && is_pose_matcher(file)) return test_exact(label, file, "pose matcher", [](const Bytes& f) { return write_ypdb(read_ypdb(f)); });
     if (ext == ".gfx") {
         if (!is_gfx(file)) { g_untested = true; return true; }
         const GfxMovie m = read_gfx(file);
@@ -1281,6 +1282,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     if (ext == ".gxt2") { (void)read_gxt2(file); return true; }
     if (ext == ".nametable") { (void)read_nametable(file); return true; }
     if (ext == ".dds") { (void)read_dds(file, name); return true; }
+    if (ext == ".ypdb" && is_pose_matcher(file)) { (void)read_ypdb(file); return true; }
     if (ext == ".gfx") { if (!is_gfx(file)) return false; (void)read_gfx(file); return true; }
     if (ext == ".png") { (void)read_png(file); return true; }
     if (ext == ".ugc" || ext == ".json") { if (!looks_json(file)) return false; (void)parse_json(std::string_view((const char*)file.data(), file.size())); return true; }
