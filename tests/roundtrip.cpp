@@ -979,6 +979,7 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
     const Game game = game_of_file(ext, file);
     if (ext == ".rel" || is_rel_ext(ext)) return test_rel(label, file);
     if (ext == ".gxt2") return test_exact(label, file, "text table", [](const Bytes& f) { return write_gxt2(read_gxt2(f)); });
+    if (ext == ".dat" && is_cache_dat(file)) return test_exact(label, file, "cache", [](const Bytes& f) { return write_cache_dat(read_cache_dat(f)); });
     if (ext == ".ypdb" && is_pose_matcher(file)) return test_exact(label, file, "pose matcher", [](const Bytes& f) { return write_ypdb(read_ypdb(f)); });
     if (ext == ".gfx") {
         if (!is_gfx(file)) { g_untested = true; return true; }
@@ -1291,7 +1292,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc" || ext == ".ugc" || ext == ".json" || ext == ".cut" || ext == ".pso" || is_rel_ext(ext) || ext == ".nametable" || ext == ".gfx";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc" || ext == ".ugc" || ext == ".json" || ext == ".cut" || ext == ".pso" || is_rel_ext(ext) || ext == ".nametable" || ext == ".gfx" || ext == ".dat";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1321,6 +1322,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     if (ext == ".nametable") { (void)read_nametable(file); return true; }
     if (ext == ".dds") { (void)read_dds(file, name); return true; }
     if (ext == ".ypdb" && is_pose_matcher(file)) { (void)read_ypdb(file); return true; }
+    if (ext == ".dat" && is_cache_dat(file)) { (void)read_cache_dat(file); return true; }
     if (ext == ".gfx") { if (!is_gfx(file)) return false; (void)read_gfx(file); return true; }
     if (ext == ".png") { (void)read_png(file); return true; }
     if (ext == ".ugc" || ext == ".json") { if (!looks_json(file)) return false; (void)parse_json(std::string_view((const char*)file.data(), file.size())); return true; }

@@ -71,6 +71,7 @@ add_library(ragekit STATIC
     src/map_views.cpp
     src/gfx.cpp
     src/posematcher.cpp
+    src/cachedat.cpp
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c

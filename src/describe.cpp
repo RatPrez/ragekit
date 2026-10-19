@@ -392,6 +392,13 @@ Fact describe(std::span<const uint8_t> file, const std::string& name, const Desc
             root.add(j.members[i].first, m.type == JsonValue::Type::Object ? fmt("%zu members", m.members.size()) : m.type == JsonValue::Type::Array ? fmt("%zu items", m.items.size())
                                                                                                                     : m.type == JsonValue::Type::Bool ? (m.boolean ? "true" : "false") : m.text);
         }
+    } else if (is_cache_dat(file)) {
+        const CacheDat cd = read_cache_dat(file);
+        root = {"cache", "version " + cd.version(), {}};
+        root.add("file dates", std::to_string(cd.file_dates().size()));
+        root.add("map data store", fmt("%zu ymaps", cd.map_nodes().size()));
+        root.add("interior proxies", std::to_string(cd.interior_proxies().size()));
+        root.add("bounds store", fmt("%zu collision files", cd.bounds().size()));
     } else if (ext == ".ypdb" && is_pose_matcher(file)) {
         const PoseMatcher p = read_ypdb(file);
         root = {"pose matcher", fmt("%zu samples, %zu bone tags, signature 0x%08X", p.samples.size(), p.bone_tags.size(), p.signature), {}};

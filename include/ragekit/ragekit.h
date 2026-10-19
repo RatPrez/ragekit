@@ -43,3 +43,4 @@
 #include "json.h"
 #include "gfx.h"
 #include "posematcher.h"
+#include "cachedat.h"

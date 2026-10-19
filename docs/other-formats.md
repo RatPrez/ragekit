@@ -190,3 +190,15 @@ file is binary, not text) hold pose matchers: samples, each a clip (clip set and
 point cloud of bone positions and weights the game compares a ped's pose against, then the bone tags, a weight set,
 two values CodeWalker leaves unnamed (1/30 and 1) and the signature again. `read_ypdb` / `write_ypdb` come back byte
 for byte on every file of both editions.
+
+## Cache files (`cachedat.h`)
+
+`gta5_cache_y.dat` and the packs' `*_cache_y.dat` / `*_cache_y_bank.dat` (132 of the 248 `.dat` files in Legacy, 77 in
+Enhanced) hold what the game would otherwise compute at start: the file dates of the archives, the map data store
+(every ymap's streaming and entity extents, content flags and parent: 4,592 nodes in `gta5_cache_y.dat`), the interior
+proxies (472) and the bounds store (8,713 collision files' extents and layers). The file is a 100-byte version area,
+text lines and, after a line naming one, a module's payload (u32 length and the bytes); `read_cache_dat` keeps every
+line and payload, so each file comes back byte for byte, and `CacheDat` decodes the dates, nodes, proxies and bounds.
+The world index (`world.h`) reads the bounds store and the proxies the same way. The other `.dat` files are text
+tables (`handling.dat`, `scriptfx.dat` ...) or other binary formats not read yet (`heightmap.dat`, `waterheight.dat`,
+`distantlights*.dat`, `navprecalc.dat`, `audioworldsectorsinfo.dat`).
