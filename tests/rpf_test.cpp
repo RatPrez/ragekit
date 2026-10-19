@@ -93,6 +93,19 @@ static void writer_tests() {
         Bytes got = i >= 0 ? r.extract(i) : Bytes();
         check(i >= 0 && r.entries()[(size_t)i].stored_size == big.size() && got.size() == big.size() && std::memcmp(got.data() + 16, big.data() + 16, big.size() - 16) == 0,
               "resource over 16 MB (scrambled size)");
+        // ranged reads of the stored bytes agree with extract_raw, clamped at the entry's end
+        if (i >= 0) {
+            const Bytes raw = r.extract_raw(i);
+            check(r.stored_length(i) == raw.size(), "stored_length is extract_raw's size");
+            check(r.read_stored(i, 0, 16) == Bytes(raw.begin(), raw.begin() + 16), "read_stored: the header");
+            const uint64_t mid = raw.size() / 2;
+            check(r.read_stored(i, mid, 4096) == Bytes(raw.begin() + mid, raw.begin() + mid + 4096), "read_stored: a slice in the middle");
+            check(r.read_stored(i, raw.size() - 10, 100).size() == 10 && r.read_stored(i, raw.size(), 5).empty(), "read_stored: clamped at the end");
+        }
+        for (const char* p : {"common/data/a.meta", "COMMON/data/b.bin", "stream/prop.ydr"}) {
+            const int k = r.find(p);
+            check(k >= 0 && r.read_stored(k, 0, SIZE_MAX) == r.extract_raw(k), (std::string("read_stored whole: ") + p).c_str());
+        }
         auto loc = r.resolve("dlc/child.rpf/inner/hello.txt");
         check(loc.archive && loc.archive->extract(loc.entry) == bytes_of("hello inner"), "nested archive");
         // directory order: children sorted by name and contiguous

@@ -110,6 +110,12 @@ public:
     /// The entry's data as stored but decrypted: a binary file still deflated when `compressed()`;
     /// a resource as a complete RSC7 file (same as extract). Used to copy entries without recompressing.
     Bytes extract_stored(int entry) const;
+    /// Up to `length` of an entry's bytes as stored on disk (what extract_raw returns: still deflated and encrypted where
+    /// the entry is, a resource with its on-disk 16-byte header), from `offset`: a header or a slice of a large entry
+    /// without reading it whole. Fewer bytes come back where the entry ends; none past its end.
+    Bytes read_stored(int entry, uint64_t offset, size_t length) const;
+    /// The stored length of an entry (the size of extract_raw), 0 for a directory.
+    uint64_t stored_length(int entry) const;
     /// Opens a nested archive entry without copying it.
     Rpf open_child(int entry) const;
 

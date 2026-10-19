@@ -524,6 +524,23 @@ Bytes Rpf::extract_raw(int entry) const {
     return b;
 }
 
+uint64_t Rpf::stored_length(int entry) const {
+    const RpfEntry& e = d_->entries.at((size_t)entry);
+    if (e.is_directory()) return 0;
+    return e.is_binary() ? (e.stored_size ? e.stored_size : e.uncompressed_size) : e.stored_size;
+}
+
+Bytes Rpf::read_stored(int entry, uint64_t offset, size_t length) const {
+    const RpfEntry& e = d_->entries.at((size_t)entry);
+    if (e.is_directory()) throw Error("'" + e.path + "' is a directory");
+    const uint64_t len = stored_length(entry);
+    const uint64_t at = d_->entry_at(e, len);
+    if (offset >= len) return {};
+    Bytes b((size_t)std::min<uint64_t>(length, len - offset));
+    if (!b.empty()) d_->src->read(at + offset, b.size(), b.data());
+    return b;
+}
+
 Bytes Rpf::extract(int entry) const { return extract(d_->entries.at((size_t)entry)); }
 
 Bytes Rpf::extract(const RpfEntry& e) const {
