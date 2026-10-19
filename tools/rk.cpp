@@ -325,6 +325,16 @@ static int cmd_info(const std::string& path, bool verbose) {
             std::printf("  (%.2f %.2f %.2f)  heading %3u speed %3u flags 0x%04X  %04X %04X\n", e.position.x, e.position.y, e.position.z, e.heading, e.speed,
                         e.flags, e.unk2, e.unk3);
         }
+    } else if (ext == ".ynd") {
+        const PathNodes n = read_ynd(file);
+        std::printf("Path nodes: %zu nodes (%u vehicle, %u ped), %zu links, %zu junctions (%zu height map bytes), %zu junction refs\n", n.nodes.size(),
+                    n.vehicle_node_count, n.ped_node_count, n.links.size(), n.junctions.size(), n.heightmaps.size(), n.junction_refs.size());
+        for (size_t i = 0; i < n.nodes.size() && (verbose || i < 10); i++) {
+            const PathNode& p = n.nodes[i];
+            const Vec3 pos = p.position();
+            std::printf("  [%u:%u] (%.2f %.2f %.2f) street %s, %d links from %u, flags %02X %02X %02X %02X %02X %X\n", p.area_id, p.node_id, pos.x, pos.y, pos.z,
+                        hash_name(p.street_name).c_str(), p.link_count(), p.link_id, p.flags0, p.flags1, p.flags2, p.flags3, p.flags4, p.link_count_flags & 7);
+        }
     } else {
         std::printf("(no reader for %s yet)\n", ext.c_str());
     }
@@ -388,6 +398,7 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
         {".ynv", [](const Bytes& f) { return write_ynv(read_ynv(f)); }},
         {".yvr", [](const Bytes& f) { return write_yvr(read_yvr(f)); }},
         {".ywr", [](const Bytes& f) { return write_ywr(read_ywr(f)); }},
+        {".ynd", [](const Bytes& f) { return write_ynd(read_ynd(f)); }},
     };
     auto it = rewrites.find(ext);
     if (it == rewrites.end()) { std::printf("no writer for %s\n", ext.c_str()); return 1; }

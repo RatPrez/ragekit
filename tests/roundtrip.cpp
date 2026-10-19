@@ -894,6 +894,15 @@ static void same_segments(Cmp& c, const Bytes& file, const Bytes& w, const char*
     if (a.graphics != b.graphics) c.fail(std::string(what) + ": graphics segment differs at " + std::to_string(first(a.graphics, b.graphics)));
     if (a.version != b.version) c.fail(std::string(what) + ": version");
 }
+// The root structure's first `size` bytes are the original's but for its vtable and the pointers at `pointers` (the
+// formats whose arrays the builder may place elsewhere).
+static void same_root(Cmp& c, const Bytes& file, const Bytes& w, const char* what, size_t size, std::initializer_list<size_t> pointers) {
+    rsc::Resource a = rsc::Resource::load(file), b = rsc::Resource::load(w);
+    if (a.system.size() < size || b.system.size() < size) { c.fail(std::string(what) + ": root shorter than " + std::to_string(size)); return; }
+    Bytes x(a.system.begin() + 4, a.system.begin() + size), y(b.system.begin() + 4, b.system.begin() + size);
+    for (size_t p : pointers) { std::memset(x.data() + p - 4, 0, 8); std::memset(y.data() + p - 4, 0, 8); }
+    if (x != y) { size_t i = 0; while (x[i] == y[i]) i++; c.fail(std::string(what) + ": root differs at " + std::to_string(i + 4)); }
+}
 template <class T> static bool same_pod(const std::vector<T>& a, const std::vector<T>& b) {
     return a.size() == b.size() && (a.empty() || std::memcmp(a.data(), b.data(), a.size() * sizeof(T)) == 0);
 }
@@ -1095,6 +1104,18 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             Bytes w = write_ywr(a); mix(w); out_size = w.size();
             if (!same_pod(a.entries, read_ywr(w).entries)) c.fail("ywr: entries");
             same_segments(c, file, w, "ywr");
+        } else if (ext == ".ynd") {
+            const PathNodes a = read_ynd(file);
+            Bytes w = write_ynd(a); mix(w); out_size = w.size();
+            const PathNodes b = read_ynd(w);
+            if (!same_pod(a.nodes, b.nodes)) c.fail("ynd: nodes");
+            if (!same_pod(a.links, b.links)) c.fail("ynd: links");
+            if (!same_pod(a.junctions, b.junctions)) c.fail("ynd: junctions");
+            if (!same_pod(a.junction_refs, b.junction_refs)) c.fail("ynd: junction refs");
+            c.eq(a.heightmaps, b.heightmaps, "ynd: heightmaps");
+            c.eq(a.vehicle_node_count, b.vehicle_node_count, "ynd: vehicle nodes"); c.eq(a.ped_node_count, b.ped_node_count, "ynd: ped nodes");
+            c.eq(a.junction_ref_count2, b.junction_ref_count2, "ynd: ref count"); c.eq(a.unk48, b.unk48, "ynd: unk48");
+            same_root(c, file, w, "ynd", 0x70, {0x08, 0x10, 0x28, 0x38, 0x40, 0x50});
         } else if (ext == ".ymt") {
             // RSC7 .ymt (ped variation infos, clothing, vehicle metadata ...) are plain Meta files: generic layer only
             Meta a = read_meta(file); Bytes w = write_meta(a); mix(w); out_size = w.size(); Meta b = read_meta(w);
@@ -1136,7 +1157,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1179,6 +1200,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     else if (ext == ".ymt" || ext == ".ymf" || ext == ".ypdb") (void)read_meta(file);
     else if (ext == ".yvr") (void)read_yvr(file);
     else if (ext == ".ywr") (void)read_ywr(file);
+    else if (ext == ".ynd") (void)read_ynd(file);
     else return false;
     return true;
 }

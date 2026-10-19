@@ -95,6 +95,24 @@ void topic_ywr(const Walk& w) {
     std::printf("\n");
 }
 
+void topic_ynd(const Walk& w) {
+    std::printf("ynd: the path nodes' unnamed fields\n");
+    Hist unused, unk14, unk6, count2_same, unk48, lflags, street_known;
+    w.each(".ynd", [&](const IndexedFile&, const Bytes& b) {
+        const PathNodes n = read_ynd(b);
+        for (const PathNode& p : n.nodes) {
+            for (uint32_t u : p.unused) unused.add(u);
+            unk14.add(p.unused14);
+            lflags.add(p.link_count_flags & 7);
+        }
+        for (const PathJunctionRef& r : n.junction_refs) unk6.add(r.unused6);
+        count2_same.add(n.junction_ref_count2 == n.junction_refs.size());
+        unk48.add(n.unk48);
+    });
+    unused.print("node unused[4]", 6, true); unk14.print("node unk14", 12, true); lflags.print("link_count_flags & 7", 8);
+    unk6.print("junction ref unk6", 8, true); count2_same.print("ref count2 == count", 4); unk48.print("root unk48", 4);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -114,6 +132,7 @@ int main(int argc, char** argv) {
         const Walk w{gi, every};
         const std::map<std::string, void (*)(const Walk&)> table = {
             {"ywr", topic_ywr},
+            {"ynd", topic_ynd},
         };
         for (const std::string& t : topics) {
             auto it = table.find(t);

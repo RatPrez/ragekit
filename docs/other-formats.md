@@ -52,3 +52,19 @@ Both come back byte for byte but for the root's vtable, which the game's files c
 build (Legacy `x64d.rpf` 0x40571218, its `update.rpf` copies 0x40573228, Enhanced 0x4068E108; ragekit writes
 0x40573228) and the page map's page counts (one 16 KB page or two of 8 KB hold the same): all 9,145 Legacy and 9,142
 Enhanced files.
+
+## Path nodes (`paths.h`)
+
+`.ynd` files (`paths.rpf/nodes<n>.ynd`, n = y x 32 + x of a 512 m cell; 1,027 in Legacy with the DLC copies) are the
+road and pavement graph. `PathNodes` holds the cell's nodes (vehicle nodes first, then ped nodes, each 40 bytes:
+position in quarter metres and z in 1/32 m, street name hash, the first of its links and their count, five flag bytes),
+the links (8 bytes: the node they lead to by area and node id, three flag bytes, the length in metres), the junctions
+(12 bytes: a box and the offset and size of a height map) with the height map bytes, and the junction references that
+tie a junction to its node. The arrays are kept as the plain structs they are on disk.
+
+The root (0x70 bytes) holds the five arrays and their counts; its other words are 0, but 0x48 is 1 and the junction
+reference count is stored twice. `rk_unknowns ynd` over all 1,027 files: the 16 bytes at the start of every node, the
+u16 at node + 0x14 and at junction reference + 6 are 0 on every one of the 309,416 nodes and 12,273 references (named
+`unused`). Every file reads back with every array and root value the same, and the root's bytes but its pointers the
+original's; the arrays are placed by ragekit's page layout, which may put them in another order than the game's files
+(the game writes nodes, links, height maps, junctions, references in that order).

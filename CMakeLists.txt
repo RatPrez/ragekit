@@ -59,6 +59,7 @@ add_library(ragekit STATIC
     src/shader_db.cpp
     src/gxt2.cpp
     src/records.cpp
+    src/paths.cpp
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c
