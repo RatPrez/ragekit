@@ -114,12 +114,12 @@ unless you give your own. A change needs a restart of the server, not only of th
 What the game's files say (Legacy b3889, `update.rpf` `game.dat151.rel` / `sounds.dat54.rel` and the DLC packs):
 
 - **Doors.** The audio of a door model is found by name: a `DoorAudioSettingsLink` (dat151 type 117) named
-  `dasl_<model hash in hex>` (`door_audio_link_name`; 401 in game.dat151, none in the DLC packs read) points at a
-  `DoorAudioSettings` (type 47, 438 items: a dat54 sound set, a `DoorTuningParams` item, the max occlusion, 0.7 on most).
+  `dasl_<model hash in hex>` (`door_audio_link_name`; 401 in game.dat151, 206 in the 38 DLC game.dat151 files read) points at a
+  `DoorAudioSettings` (type 47, 438 items in game.dat151: a dat54 sound set, a `DoorTuningParams` item, the max occlusion, 0.7 on most).
   `DoorTuningParams` (type 48, 30 items) are the thresholds at which the audio counts a door open, closed or moving and a
   door type: 4 for hinged doors (0246D335, used by 313 settings: `v_ilev_ct_door01`, `v_ilev_mm_door`, `v_ilev_fh_frntdoor`,
   the fire door), 2 for up-and-over garage doors (`prop_com_ls_door_01`, `prop_gar_door_01`, Michael's and Franklin's), 1 for
-  the roller shutter `v_ilev_bl_shutter2`. The sound set (dat54 type 32) maps script names to sounds: a hinged door has
+  the vertical sliders (the bank's roller shutter `v_ilev_bl_shutter2`, Benny's `lr_prop_supermod_door_01`). The sound set (dat54 type 32) maps script names to sounds: a hinged door has
   `opening`, `closing`, `closed`, `push`, `limit`, `collision` and one name not found (702E09E4), each a tree of variable
   blocks, parameter transforms and multitracks over `RESIDENT/doors.awc`; a garage door has `opening`, `closing` (a synth
   loop), `opened` and `closed` (`SimpleSound`s). This is the audio side; `doortuning.meta` is the

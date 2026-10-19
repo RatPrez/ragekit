@@ -520,7 +520,7 @@ WavAudio read_wav(std::span<const uint8_t> file) {
     }
     if (!have_fmt) throw Error("a .wav file without a format chunk");
     if (format != 1) throw Error(format == 3 ? "a 32-bit float .wav (save it as 16-bit PCM)" : "a compressed .wav (format " + std::to_string(format) + "; save it as 16-bit PCM)");
-    if (bits != 16) throw Error("a " + std::to_string(bits) + "-bit .wav (save it as 16-bit PCM)");
+    if (bits != 16) throw Error(std::string(bits == 8 || bits == 18 ? "an " : "a ") + std::to_string(bits) + "-bit .wav (save it as 16-bit PCM)");
     if (w.channels == 0) throw Error("a .wav file with no channels");
     if (w.sample_rate == 0) throw Error("a .wav file with a sample rate of 0");
     if (!have_data || w.samples.empty()) throw Error("a .wav file with no audio");
