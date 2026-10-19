@@ -391,6 +391,10 @@ Fact describe(std::span<const uint8_t> file, const std::string& name, const Desc
             root.add(j.members[i].first, m.type == JsonValue::Type::Object ? fmt("%zu members", m.members.size()) : m.type == JsonValue::Type::Array ? fmt("%zu items", m.items.size())
                                                                                                                     : m.type == JsonValue::Type::Bool ? (m.boolean ? "true" : "false") : m.text);
         }
+    } else if (ext == ".nametable") {
+        const auto names = read_nametable(file);
+        root = {"name table", fmt("%zu names", names.size()), {}};
+        for (size_t i = 0; i < names.size(); i++) if (c.show(root, i, names.size())) root.add(fmt("0x%08X", joaat_lower(names[i])), names[i]);
     } else if (ext == ".fxc") {
         const FxcFile f = read_fxc(file);
         root = {"compiled shader effect", fmt("vertex type %u", f.vertex_type), {}};

@@ -62,7 +62,11 @@ collision files, HD texture dictionary bindings and map data groups. `write_ymf`
 string index), and the hash and pack tables (the file positions of the fields that hold hashes of other items and of
 wave containers). `Rel` keeps all of it as stored, so `read_rel` -> `write_rel` is byte for byte (all 227 `.rel` files
 of the Legacy install and 151 from FiveM resources; CodeWalker's XML of original and rewrite agree). Items are opaque
-(`RelItem`: hash, type id, bytes) except the typed dat151 structures an interior needs.
+(`RelItem`: hash, type id, bytes) except the typed dat151 structures an interior needs. The DLC packs also carry the
+same files without the `.rel` extension (`.dat4`, `.dat10`, `.dat15`, `.dat54`, `.dat149`, `.dat150`, `.dat151`: 229 in
+Legacy), which read and write back the same, and `.nametable` files (229) listing a data file's item names, each NUL
+terminated (`read_nametable` / `write_nametable`, byte for byte). PSO files under other extensions (`.cut` cutscenes,
+`.pso`) come back byte for byte like the `.ymt` ones.
 
 ```cpp
 Rel rel = read_rel(rsc::read_file("game.dat151.rel"));

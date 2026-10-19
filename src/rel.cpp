@@ -399,4 +399,23 @@ uint32_t rel_add(Rel& r, uint32_t h, const Dat151InteriorRoom& v) { Bytes b = v.
 uint32_t rel_add(Rel& r, uint32_t h, const Dat151StaticEmitterList& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
 uint32_t rel_add(Rel& r, uint32_t h, const Dat151DoorAudioSettingsLink& v) { Bytes b = v.bytes(); return r.add(h, b, v.refs()); }
 
+std::vector<std::string> read_nametable(std::span<const uint8_t> file) {
+    std::vector<std::string> names;
+    size_t start = 0;
+    for (size_t i = 0; i < file.size(); i++)
+        if (file[i] == 0) { names.emplace_back((const char*)file.data() + start, i - start); start = i + 1; }
+    if (start != file.size()) throw Error("nametable: the last name has no terminating NUL");
+    return names;
+}
+
+Bytes write_nametable(const std::vector<std::string>& names) {
+    Bytes b;
+    for (const std::string& n : names) {
+        if (n.find('\0') != std::string::npos) throw Error("nametable: a name with a NUL in it");
+        b.insert(b.end(), n.begin(), n.end());
+        b.push_back(0);
+    }
+    return b;
+}
+
 } // namespace rk

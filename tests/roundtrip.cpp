@@ -907,6 +907,11 @@ template <class T> static bool same_pod(const std::vector<T>& a, const std::vect
     return a.size() == b.size() && (a.empty() || std::memcmp(a.data(), b.data(), a.size() * sizeof(T)) == 0);
 }
 
+// The audio data files stored without the .rel extension: .dat4, .dat10, .dat15, .dat54, .dat149 ... (not .dat itself).
+static bool is_rel_ext(const std::string& ext) {
+    return ext.size() > 4 && ext.rfind(".dat", 0) == 0 && ext.find_first_not_of("0123456789", 4) == std::string::npos;
+}
+
 // A JSON document starts with an object or an array (after a byte order mark and white space).
 static bool looks_json(const Bytes& f) {
     size_t i = f.size() >= 3 && f[0] == 0xEF && f[1] == 0xBB && f[2] == 0xBF ? 3 : 0;
@@ -934,8 +939,9 @@ static bool test_exact(const std::string& label, const Bytes& file, const char* 
 static bool test_bytes(const std::string& label, const std::string& ext, const Bytes& file) {
     g_digest = 0;
     const Game game = game_of_file(ext, file);
-    if (ext == ".rel") return test_rel(label, file);
+    if (ext == ".rel" || is_rel_ext(ext)) return test_rel(label, file);
     if (ext == ".gxt2") return test_exact(label, file, "text table", [](const Bytes& f) { return write_gxt2(read_gxt2(f)); });
+    if (ext == ".nametable") return test_exact(label, file, "name table", [](const Bytes& f) { return write_nametable(read_nametable(f)); });
     if ((ext == ".ugc" || ext == ".json") && !looks_json(file)) { g_untested = true; return true; }   // ugc_rstar.ugc is binary
     if (ext == ".ugc" || ext == ".json") {
         // JSON: parse -> write -> parse gives the same document (keys in order, numbers as written)
@@ -987,7 +993,7 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
         say("ok%-60s  %zu bytes, RBF\n", label.c_str(), file.size());
         return true;
     }
-    bool pso = is_pso(file) && (ext == ".ymt" || ext == ".ypdb" || ext == ".ymf");
+    bool pso = is_pso(file) && (ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" || ext == ".cut" || ext == ".pso");
     if (!pso && !rsc::Resource::is_resource(file)) { g_untested = true; return true; }
     Cmp c;
     size_t out_size = 0;
@@ -1221,7 +1227,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc" || ext == ".ugc" || ext == ".json";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc" || ext == ".ugc" || ext == ".json" || ext == ".cut" || ext == ".pso" || is_rel_ext(ext) || ext == ".nametable";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1248,6 +1254,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     if (ext == ".rel" || ext.rfind(".dat", 0) == 0 && ext.size() > 4) { (void)read_rel(file); return true; }
     if (ext == ".fxc") { (void)read_fxc(file); return true; }
     if (ext == ".gxt2") { (void)read_gxt2(file); return true; }
+    if (ext == ".nametable") { (void)read_nametable(file); return true; }
     if (ext == ".ugc" || ext == ".json") { if (!looks_json(file)) return false; (void)parse_json(std::string_view((const char*)file.data(), file.size())); return true; }
     if (ext == ".awc") { if (!is_awc(file)) return false; (void)awc_decode(read_awc(file)); return true; }
     if (ext == ".sps") { (void)read_sps(std::string_view((const char*)file.data(), file.size()), name); return true; }

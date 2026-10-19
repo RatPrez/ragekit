@@ -124,6 +124,11 @@ Bytes write_rel(const Rel& r);
 /// Text listing: header, counts, and per item hash/offset/length/type (`max_items` 0 = all).
 std::string rel_describe(const Rel& r, size_t max_items = 0);
 
+/// A `.nametable` (`<file>.dat151.nametable` next to the DLC audio data): the names of a data file's items, each NUL
+/// terminated, in a row. read gives them in order; write puts them back the same way.
+std::vector<std::string> read_nametable(std::span<const uint8_t> file);
+Bytes write_nametable(const std::vector<std::string>& names);
+
 // ---------------------------------------------------------------------------------------------------------------
 // Typed dat151 items (the types an interior needs). Every struct has `read(const RelItem&)`, `bytes()` (the whole
 // item) and `refs()` (positions inside the item for Rel::add's hash_refs).
