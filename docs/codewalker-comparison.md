@@ -49,7 +49,8 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | XML `.meta` text files (vehicles.meta, carcols.meta, handling, content.xml, setup2.xml) | parsed into typed classes | **yes**: a DOM reader and writer (`xml_dom.h`); all 2,857 game files read back the same | typed models |
 | .gxt2 text tables | yes | **yes** (`gxt2.h`): all 39,095 game files of both editions byte for byte | none |
 | Cache dat (`gta5_cache_y.dat`) | read | **yes** (`cachedat.h`: every module kept, the map data store, interior proxies and bounds store typed; every cache file of both editions back byte for byte; `world.h` uses them) | none |
-| Heightmap / watermap / distant lights | read, write | - | everything |
+| Heightmap | read, write | **yes** (`heightmap.h`: both grids, the height at a position; every game file byte for byte) | none |
+| Watermap / distant lights | read, write | - | everything (one or two files each) |
 | Audio: .awc wave containers | yes + XML | **yes** (`awc.h`: every chunk kept, byte for byte on every game file; decrypted; PCM and ADPCM decoded to .wav) | Enhanced's codec 7; XML |
 | Audio: .rel (dat54 sounds, dat151 game, dat4 speech/audioconfig, dat10 synths, dat15 mix, dat16 curves, dat22 categories, dat149/150) | yes + XML (a typed class per item type) | **container: yes** (`rel.h`: byte for byte on 378 game and server files; index, name, hash and pack tables; a builder with the game's alignment and index order); **typed: dat151 InteriorSettings, InteriorRoom, StaticEmitterList, DoorAudioSettingsLink** | typed structs for the other ~150 item types; XML |
 | Audio occlusion `.ymt` (naOcclusionInteriorMetadata) | read as a generic PSO; no builder | **yes** (`audio_occlusion.h`: typed read/write of portal infos and path nodes, paths from rooms and portals, proxy hash) | the game's order of the path node list is not reproduced |
@@ -72,4 +73,4 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 ## Next for ragekit
 
 1. Typed models for the common PSO files (carcols, carvariations, peds ...).
-2. Decoding animation channels (`.ycd`) and expression streams (`.yed`), and the formats still unread (`.mrf`, heightmaps, water and distant lights).
+2. Decoding animation channels (`.ycd`) and expression streams (`.yed`), and the formats still unread (`.mrf`, the water and distant lights files).

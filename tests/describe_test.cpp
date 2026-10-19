@@ -57,6 +57,24 @@ int main() {
     threw = false;
     try { (void)parse_json("{\"a\":[1,2}"); } catch (const Error& e) { threw = std::string(e.what()).find("byte 9") != std::string::npos; }
     check(threw, "json: a syntax error says where");
+    // a heightmap: rows stored from their first to their last cell, the lowest heights after the highest
+    Heightmap hm;
+    hm.width = 4;
+    hm.height = 2;
+    hm.min = {-100, -50, 0};
+    hm.max = {100, 50, 255};
+    hm.max_heights = {0, 10, 20, 0, 0, 0, 0, 0};
+    hm.min_heights = {0, 5, 6, 0, 0, 0, 0, 0};
+    const Bytes hb = write_heightmap(hm);
+    check(hb.size() == 44 + 16 + 4 && hb[0] == 'H' && hb[44 + 1] == 1 && hb[44 + 3] == 2 && hb[44 + 7] == 0xFF, "heightmap: big endian, row 0 from cell 1 (offset -1)");
+    const Heightmap hr = read_heightmap(hb);
+    check(hr.max_heights == hm.max_heights && hr.min_heights == hm.min_heights && write_heightmap(hr) == hb, "heightmap: read back the same");
+    float lo = 0, hi = 0;
+    check(hr.heights_at(-40, -30, lo, hi) && lo == 5 && hi == 10 && !hr.heights_at(60, 30, lo, hi) && !hr.heights_at(150, 0, lo, hi), "heightmap: heights at a position");
+    check(describe(hb, "heightmap.dat").label == "heightmap", "heightmap: described");
+    threw = false;
+    try { (void)read_heightmap(Bytes(hb.begin(), hb.end() - 1)); } catch (const Error&) { threw = true; }
+    check(threw, "heightmap: a truncated file throws");
     std::printf(failures ? "%d failures\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }

@@ -72,6 +72,7 @@ add_library(ragekit STATIC
     src/gfx.cpp
     src/posematcher.cpp
     src/cachedat.cpp
+    src/heightmap.cpp
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c

@@ -43,7 +43,7 @@ third_party/clipper2  polygon clipping for the navmesh builder (Boost licence)
 | .awc audio containers | yes | yes | byte for byte; decrypted, PCM and ADPCM decoded to .wav |
 | .ynd path nodes, .yvr / .ywr recordings | yes | yes | every game file |
 | .yed / .yfd expressions and frame filters, .ybd bound dictionaries | yes | yes | every structure kept as read; every game file |
-| .ysc scripts, .gfx Scaleform movies, .ypdb pose matchers, cache .dat | yes | yes | header, code, natives and strings of scripts; SWF tags; every game file of both editions back as read |
+| .ysc scripts, .gfx Scaleform movies, .ypdb pose matchers, cache .dat, heightmap.dat | yes | yes | header, code, natives and strings of scripts; SWF tags; every game file of both editions back as read |
 | RPF7 archives | yes | yes | AES, NG, OPEN and plain; nested archives; writes all four, NG as the game encrypts it; Legacy and Enhanced alike |
 | CodeWalker XML | no | yes | what CodeWalker's "Export XML" writes for .ydr/.ydd/.ybn/.ytd, which CodeWalker and Sollumz import |
 | glTF 2.0 | no | yes | .glb with textures |

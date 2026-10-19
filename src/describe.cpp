@@ -399,6 +399,14 @@ Fact describe(std::span<const uint8_t> file, const std::string& name, const Desc
         root.add("map data store", fmt("%zu ymaps", cd.map_nodes().size()));
         root.add("interior proxies", std::to_string(cd.interior_proxies().size()));
         root.add("bounds store", fmt("%zu collision files", cd.bounds().size()));
+    } else if (is_heightmap(file)) {
+        const Heightmap h = read_heightmap(file);
+        size_t cells = 0;
+        for (uint8_t b : h.max_heights) cells += b != 0;
+        root = {"heightmap", fmt("%u x %u cells, %zu with data", h.width, h.height, cells), {}};
+        root.add("from", fmt("%.1f %.1f %.1f", h.min.x, h.min.y, h.min.z));
+        root.add("to", fmt("%.1f %.1f %.1f", h.max.x, h.max.y, h.max.z));
+        root.add("cell", fmt("%.2f x %.2f m", (h.max.x - h.min.x) / std::max<int>(1, h.width), (h.max.y - h.min.y) / std::max<int>(1, h.height)));
     } else if (ext == ".ypdb" && is_pose_matcher(file)) {
         const PoseMatcher p = read_ypdb(file);
         root = {"pose matcher", fmt("%zu samples, %zu bone tags, signature 0x%08X", p.samples.size(), p.bone_tags.size(), p.signature), {}};

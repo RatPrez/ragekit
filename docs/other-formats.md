@@ -200,5 +200,18 @@ proxies (472) and the bounds store (8,713 collision files' extents and layers). 
 text lines and, after a line naming one, a module's payload (u32 length and the bytes); `read_cache_dat` keeps every
 line and payload, so each file comes back byte for byte, and `CacheDat` decodes the dates, nodes, proxies and bounds.
 The world index (`world.h`) reads the bounds store and the proxies the same way. The other `.dat` files are text
-tables (`handling.dat`, `scriptfx.dat` ...) or other binary formats not read yet (`heightmap.dat`, `waterheight.dat`,
-`distantlights*.dat`, `navprecalc.dat`, `audioworldsectorsinfo.dat`).
+tables (`handling.dat`, `scriptfx.dat` ...), the heightmaps (below) or binary formats not read yet (`waterheight.dat`,
+`distantlights*.dat`, `navprecalc.dat`, `nav.dat`, `navmeshindexmapping.dat`, `audioworldsectorsinfo.dat`: one or two
+files each).
+
+## Heightmaps (`heightmap.h`)
+
+`heightmap.dat` (in `common.rpf` and again, the same bytes, in `update.rpf`; the same file in Enhanced) and
+`heightmapheistisland.dat` give the map's height in coarse cells: for each cell the highest point of anything in it and
+the lowest ground. Big endian: "HMAP", version 1.1, compressed 1, the width and height in cells (183 x 249 and 50 x
+50), the bounds (-4050 -4050 0 to 5100 8400 816; the island 3500 -6500 1 to 6000 -4000 816), then per row the first
+cell, the count and an offset, and the rows' highest heights followed by their lowest in the same places. Cells are 50
+m, row 0 at the bounds' minimum y, a byte b is min.z + b / 255 of the height range. Checked against the map: the cell of
+Mount Chiliad's summit holds 806 / 768 m, Michael's house's 86 / 58 m, the Maze Bank's 326 m over a lowest 26 m, the sea
+nothing (CodeWalker draws the grid with (size) / (count - 1) steps, which puts the far edge 50 m out). `read_heightmap`
+/ `write_heightmap` come back byte for byte on the three files; `Heightmap::heights_at(x, y, ...)` reads a position.
