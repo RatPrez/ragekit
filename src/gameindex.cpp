@@ -549,6 +549,33 @@ struct GameIndex::Impl {
     mutable std::unordered_map<uint32_t, std::shared_ptr<Rpf>> open_rpfs;
     mutable std::unordered_map<uint32_t, size_t> ytyp_counts;
     mutable bool counts_built = false;
+    mutable std::vector<uint16_t> archive_ranks;   // built on first use (archive_rank)
+
+    /// An archive's rank: that of the files in its root folder; else of its own entry in the parent archive; else the
+    /// lowest of its files'.
+    uint16_t archive_rank(uint32_t i) const {
+        std::lock_guard<std::recursive_mutex> g(mu);
+        if (archive_ranks.empty()) {
+            const uint16_t none = UINT16_MAX;
+            std::vector<uint16_t> root(archives.size(), none), any(archives.size(), none), as_entry(archives.size(), none);
+            for (const IndexedFile& f : files) {
+                if (f.archive >= archives.size()) continue;
+                if (dirs.get(f.dir).empty()) root[f.archive] = std::min(root[f.archive], f.rank);
+                any[f.archive] = std::min(any[f.archive], f.rank);
+            }
+            std::unordered_map<uint64_t, uint32_t> entry_of;   // (parent archive, entry) -> the nested archive
+            for (size_t a = 0; a < archives.size(); a++)
+                if (archives[a].parent >= 0) entry_of[(uint64_t)archives[a].parent << 32 | archives[a].parent_entry] = (uint32_t)a;
+            for (const IndexedFile& f : files) {
+                auto it = entry_of.find((uint64_t)f.archive << 32 | f.entry);
+                if (it != entry_of.end()) as_entry[it->second] = f.rank;
+            }
+            archive_ranks.resize(archives.size());
+            for (size_t a = 0; a < archives.size(); a++)
+                archive_ranks[a] = root[a] != none ? root[a] : as_entry[a] != none ? as_entry[a] : any[a] != none ? any[a] : 0;
+        }
+        return archive_ranks.at(i);
+    }
 
     void finish_load() {
         ext_ids.clear();
@@ -1144,6 +1171,16 @@ size_t GameIndex::archetype_count(uint32_t ytyp_file) const {
     }
     auto it = d_->ytyp_counts.find(ytyp_file);
     return it == d_->ytyp_counts.end() ? 0 : it->second;
+}
+
+Rpf GameIndex::archive(uint32_t index) const {
+    if (index >= d_->archives.size()) throw Error("game index: no archive " + std::to_string(index));
+    return *d_->open_archive(index);
+}
+
+const LoadRank& GameIndex::archive_rank(uint32_t index) const {
+    if (index >= d_->archives.size()) throw Error("game index: no archive " + std::to_string(index));
+    return d_->ranks.at(d_->archive_rank(index));
 }
 
 Bytes GameIndex::extract(const IndexedFile& f) const {

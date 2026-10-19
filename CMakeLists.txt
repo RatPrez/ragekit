@@ -140,6 +140,8 @@ if (RAGEKIT_BUILD_TESTS)
     target_link_libraries(rk_gltf_test PRIVATE ragekit)
     add_executable(rk_bench tests/bench.cpp)   # timings of the hot paths over the game install (not a test)
     target_link_libraries(rk_bench PRIVATE ragekit)
+    add_executable(rk_gameindex_test tests/gameindex_test.cpp)   # the index's archives and their load ranks (with an install)
+    target_link_libraries(rk_gameindex_test PRIVATE ragekit)
     add_executable(rk_materials_test tests/materials_test.cpp)   # collision material names and materials.dat
     target_link_libraries(rk_materials_test PRIVATE ragekit)
     add_executable(rk_unknowns tests/unknowns.cpp)   # statistics of unnamed fields over the game install (evidence for docs)

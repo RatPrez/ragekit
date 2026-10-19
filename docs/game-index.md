@@ -33,6 +33,11 @@ just above the pack it patches. A pack the list does not name never wins a looku
 `archetype`) return the highest rank, and at equal rank the file scanned last; `versions()` and `archetype_versions()`
 give every copy.
 
+**Archives**: `archives()` lists every archive the index scanned (the path, the parent archive and its entry);
+`archive(i)` opens one (a nested archive through its parents, kept open and shared) and `archive_rank(i)` gives its
+place in the load order, that of the files in its root folder (a DLC pack's `dlc.rpf` and every archive nested in it rank
+as the pack). `rk_gameindex_test` checks both against the install.
+
 **Cache**: `%USERPROFILE%\.ragekit\index\<key>.bin`, format version `GameIndex::kFormat` (the layout is documented at
 the top of `src/gameindex.cpp`). The key hashes the format version, the folder, the executable's version, size and
 time, and the name, size and time of every archive, so a game update or another folder gets a new file (old ones are

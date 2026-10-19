@@ -127,6 +127,13 @@ public:
     const std::vector<std::string>& extensions() const;      // ".ydr", ".ytd", ...
     const std::vector<LoadRank>& ranks() const;              // ascending
 
+    /// The archive of archives()[index] opened (a nested one through its parents; kept open and shared, so a second call
+    /// is cheap). Throws rk::Error for an index past the list.
+    Rpf archive(uint32_t index) const;
+    /// Where an archive sits in the load order: the rank of the files in its root folder (a dlc.rpf's pack, update.rpf's
+    /// tier), else of its own entry in its parent.
+    const LoadRank& archive_rank(uint32_t index) const;
+
     // --- names ---------------------------------------------------------------------------
     /// The string for a hash if some file name had it; else "hash_XXXXXXXX".
     std::string name(uint32_t hash) const;
