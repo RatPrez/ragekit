@@ -481,8 +481,29 @@ static void compare_struct_items(Cmp& c, const Meta& a, const Meta& b) {
         // items are padded to 16 bytes inside a block; compare item by item
         size_t stride_a = ((size_t)s.size + 15) & ~size_t(15);
         (void)stride_a;
+        // the items: where the arrays of structures of this type point (the written file starts each array 16-aligned, the
+        // game's exporter packs them), else the blocks walked at the structure's size
         auto items = [&](const Meta& m) {
             std::vector<const uint8_t*> v;
+            for (const MetaStruct& owner : m.structs) {
+                if (owner.size <= 0) continue;
+                for (size_t ei = 0; ei < owner.entries.size(); ei++) {
+                    const MetaEntry& e = owner.entries[ei];
+                    if (e.type != metatype::Array || e.ref_index < 0 || (size_t)e.ref_index >= owner.entries.size()) continue;
+                    const MetaEntry& el = owner.entries[(size_t)e.ref_index];
+                    if (el.type != metatype::Structure || el.ref_key != s.name) continue;
+                    for (auto& blk : m.blocks) {
+                        if (blk.type != owner.name) continue;
+                        for (size_t p = 0; p + owner.size <= blk.data.size(); p += owner.size) {
+                            const MetaArray arr = Meta::read_array(blk.data.data() + p + e.offset);
+                            if (!arr.pointer || !arr.count) continue;
+                            try { const uint8_t* at = m.at(arr.pointer, (size_t)s.size * arr.count); for (uint16_t k = 0; k < arr.count; k++) v.push_back(at + (size_t)k * s.size); }
+                            catch (const std::exception&) {}
+                        }
+                    }
+                }
+            }
+            if (!v.empty()) return v;
             for (auto& blk : m.blocks) if (blk.type == s.name) for (size_t p = 0; p + s.size <= blk.data.size(); p += s.size) v.push_back(blk.data.data() + p);
             return v;
         };
@@ -495,6 +516,18 @@ static void compare_struct_items(Cmp& c, const Meta& a, const Meta& b) {
             size_t n = std::min(va.size(), vb.size()); va.resize(n); vb.resize(n);
         }
         if (va.size() != vb.size()) { c.fail("struct " + hash_name(s.name) + " item count " + std::to_string(va.size()) + " vs " + std::to_string(vb.size())); continue; }
+        // the items' values (pointers masked), in block order; the typed writer may lay the items of several owners out in
+        // another order (one block per type), so the same items in another order are the same content
+        auto masked = [&](const std::vector<const uint8_t*>& v) {
+            std::vector<Bytes> out;
+            for (const uint8_t* p : v) { Bytes x(p, p + s.size); for (size_t k = 0; k < (size_t)s.size; k++) if (skip[k]) x[k] = 0; out.push_back(std::move(x)); }
+            return out;
+        };
+        std::vector<Bytes> ma = masked(va), mb = masked(vb);
+        if (ma == mb) continue;
+        std::sort(ma.begin(), ma.end());
+        std::sort(mb.begin(), mb.end());
+        if (ma == mb) continue;
         for (size_t i = 0; i < va.size(); i++)
             for (size_t k = 0; k < (size_t)s.size; k++)
                 if (!skip[k] && va[i][k] != vb[i][k]) { c.fail("struct " + hash_name(s.name) + " item " + std::to_string(i) + " byte " + std::to_string(k)); i = va.size(); break; }
