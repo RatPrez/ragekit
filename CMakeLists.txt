@@ -60,6 +60,8 @@ add_library(ragekit STATIC
     src/gxt2.cpp
     src/records.cpp
     src/paths.cpp
+    src/graph.cpp
+    src/clip.cpp
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c

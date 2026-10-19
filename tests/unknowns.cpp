@@ -113,6 +113,36 @@ void topic_ynd(const Walk& w) {
     unk6.print("junction ref unk6", 8, true); count2_same.print("ref count2 == count", 4); unk48.print("root unk48", 4);
 }
 
+void topic_ycd(const Walk& w) {
+    std::printf("ycd: the bone tracks' second byte against the track, the animations' flags and values\n");
+    std::map<int, Hist> format_by_track;
+    Hist flags, unk11, unk04, hash1c, usage, clip_unk30, usage_minus_refs, flags_root, flags_noroot;
+    w.each(".ycd", [&](const IndexedFile&, const Bytes& b) {
+        const ClipDictionary d = read_ycd(b);
+        for (const AnimationRef& a : d.animations()) {
+            for (const AnimationBoneId& id : a.bone_ids()) format_by_track[id.track].add(id.format);
+            flags.add(a.flags()); unk11.add(a.block->get<uint8_t>(0x11)); unk04.add(a.block->get<uint32_t>(0x04));
+            hash1c.add(a.block->get<uint32_t>(0x1C)); usage.add(a.block->get<uint32_t>(0x3C));
+        }
+        std::map<const RscBlock*, int> refs;
+        for (const ClipRef& c : d.clips()) {
+            clip_unk30.add(c.block->get<uint32_t>(0x30));
+            for (const RscBlockPtr& a : c.animations()) refs[a.get()]++;
+        }
+        for (const AnimationRef& a : d.animations()) {
+            usage_minus_refs.add((double)a.block->get<uint32_t>(0x3C) - refs[a.block.get()]);
+            bool root_motion = false;
+            for (const RscBlockPtr& s : a.sequences()) root_motion |= s->get<uint8_t>(0x1F) != 0;
+            (root_motion ? flags_root : flags_noroot).add(a.flags());
+        }
+    });
+    usage_minus_refs.print("usage - clips using it", 6);
+    flags_root.print("flags, root motion", 6, true); flags_noroot.print("flags, no root motion", 6, true);
+    for (auto& [t, h] : format_by_track) { char n[32]; std::snprintf(n, sizeof n, "format on track %d", t); h.print(n, 6); }
+    flags.print("animation flags (0x10)", 8, true); unk11.print("animation 0x11", 4); unk04.print("animation 0x04", 4);
+    hash1c.print("animation 0x1C", 8, true); usage.print("animation usage (0x3C)", 8); clip_unk30.print("clip 0x30", 4);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -133,6 +163,7 @@ int main(int argc, char** argv) {
         const std::map<std::string, void (*)(const Walk&)> table = {
             {"ywr", topic_ywr},
             {"ynd", topic_ynd},
+            {"ycd", topic_ycd},
         };
         for (const std::string& t : topics) {
             auto it = table.find(t);

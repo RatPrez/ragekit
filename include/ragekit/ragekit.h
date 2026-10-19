@@ -33,3 +33,5 @@
 #include "gxt2.h"
 #include "records.h"
 #include "paths.h"
+#include "graph.h"
+#include "clip.h"

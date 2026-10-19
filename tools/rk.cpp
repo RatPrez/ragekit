@@ -325,6 +325,25 @@ static int cmd_info(const std::string& path, bool verbose) {
             std::printf("  (%.2f %.2f %.2f)  heading %3u speed %3u flags 0x%04X  %04X %04X\n", e.position.x, e.position.y, e.position.z, e.heading, e.speed,
                         e.flags, e.unk2, e.unk3);
         }
+    } else if (ext == ".ycd") {
+        const ClipDictionary d = read_ycd(file);
+        const auto clips = d.clips();
+        const auto anims = d.animations();
+        std::printf("Clip dictionary: %zu clips, %zu animations, %zu structures\n", clips.size(), anims.size(), graph_blocks(d.root).size());
+        for (const ClipRef& c : clips) {
+            std::printf("  clip %-40s %s", c.name().c_str(), c.type() == ClipType::Animation ? "animation" : "list");
+            std::printf("  %.3f .. %.3f s rate %.2f, %zu animations, %zu properties, %zu tags\n", c.start_time(), c.end_time(), c.rate(), c.animations().size(),
+                        c.property_names().size(), c.tag_count());
+        }
+        for (const AnimationRef& a : anims) {
+            const auto ids = a.bone_ids();
+            size_t bytes = 0;
+            for (const RscBlockPtr& s : a.sequences()) bytes += s->bytes.size();
+            std::printf("  animation %s: %u frames, %.3f s, %zu sequences (%zu bytes), %zu tracks\n", hash_name(a.hash).c_str(), a.frames(), a.duration(),
+                        a.sequences().size(), bytes, ids.size());
+            if (verbose)
+                for (const AnimationBoneId& id : ids) std::printf("    bone %5u track %2u format %u\n", id.bone, id.track, id.format);
+        }
     } else if (ext == ".ynd") {
         const PathNodes n = read_ynd(file);
         std::printf("Path nodes: %zu nodes (%u vehicle, %u ped), %zu links, %zu junctions (%zu height map bytes), %zu junction refs\n", n.nodes.size(),
@@ -399,6 +418,7 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
         {".yvr", [](const Bytes& f) { return write_yvr(read_yvr(f)); }},
         {".ywr", [](const Bytes& f) { return write_ywr(read_ywr(f)); }},
         {".ynd", [](const Bytes& f) { return write_ynd(read_ynd(f)); }},
+        {".ycd", [](const Bytes& f) { return write_ycd(read_ycd(f)); }},
     };
     auto it = rewrites.find(ext);
     if (it == rewrites.end()) { std::printf("no writer for %s\n", ext.c_str()); return 1; }

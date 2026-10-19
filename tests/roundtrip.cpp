@@ -1104,6 +1104,16 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             Bytes w = write_ywr(a); mix(w); out_size = w.size();
             if (!same_pod(a.entries, read_ywr(w).entries)) c.fail("ywr: entries");
             same_segments(c, file, w, "ywr");
+        } else if (ext == ".ycd") {
+            size_t census = 0;
+            std::string where, diff;
+            const ClipDictionary a = read_ycd_checked(file, &census, &where);
+            if (census) c.fail("ycd: " + std::to_string(census) + " pointer-like values the schema does not know:" + where);
+            Bytes w = write_ycd(a); mix(w); out_size = w.size();
+            size_t census2 = 0;
+            const ClipDictionary b = read_ycd_checked(w, &census2);
+            if (!same_graph(a.root, b.root, &diff)) c.fail("ycd: " + diff);
+            if (census2) c.fail("ycd: the written file has pointer-like values the schema does not know");
         } else if (ext == ".ynd") {
             const PathNodes a = read_ynd(file);
             Bytes w = write_ynd(a); mix(w); out_size = w.size();
@@ -1157,7 +1167,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1201,6 +1211,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     else if (ext == ".yvr") (void)read_yvr(file);
     else if (ext == ".ywr") (void)read_ywr(file);
     else if (ext == ".ynd") (void)read_ynd(file);
+    else if (ext == ".ycd") (void)read_ycd(file);
     else return false;
     return true;
 }

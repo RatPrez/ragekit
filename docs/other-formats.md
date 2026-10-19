@@ -68,3 +68,40 @@ u16 at node + 0x14 and at junction reference + 6 are 0 on every one of the 309,4
 `unused`). Every file reads back with every array and root value the same, and the root's bytes but its pointers the
 original's; the arrays are placed by ragekit's page layout, which may put them in another order than the game's files
 (the game writes nodes, links, height maps, junctions, references in that order).
+
+## Clip dictionaries (`clip.h`, `graph.h`)
+
+`.ycd` files (24,844 in Legacy, 25,961 in Enhanced; version 46 in both) hold the game's animations and the clips that
+play them: a crClipDictionary with a hash map of animations (crAnimation: frames, duration, the tracks it drives and
+their compressed sequences) and a hash map of clips (crClip: the `pack:/name.clip` path, the animation or list of
+animations it plays with start and end times and a rate, its properties and tags).
+
+ragekit does not model the channel compression; it keeps every structure as it was read, as a graph of `RscBlock`s
+(`graph.h`): each structure's bytes with its pointers taken out and links in their place. `write_ycd` lays the same
+graph out again, so a dictionary comes back with every structure the same; `AnimationRef` and `ClipRef` read the
+fields tools need (names, times, frames, tracks, the raw sequence blocks) and `set_duration` / `RscBlock::set` change
+values in place. The schema follows CodeWalker's Clip.cs; `read_ycd_checked` counts 8-byte values that look like
+pointers where the schema takes none (0 on every game file once the name hashes that happen to look like pointers are
+marked as data).
+
+```cpp
+ClipDictionary d = read_ycd(file);
+for (const ClipRef& c : d.clips())
+    std::printf("%s %.2f s\n", c.name().c_str(), c.end_time() - c.start_time());
+```
+
+From `rk_unknowns ycd` (every 5th file, 48,719 animations):
+
+- A track's second byte (CodeWalker's `Unk0`, `AnimationBoneId::format`) is its value type: every track number has one
+  value on all 2.3 million tracks: 0 on vector tracks (0 translation, 2 scale, 5, 7, 25, 28 ...), 1 on quaternion tracks
+  (1 rotation, 6, 8, 26), 2 on float tracks (22, 24, 27, 30 ... 53, 134 ... 140).
+- The animation's byte at 0x10 has 0x10 exactly when one of its sequences carries root motion (37,674 animations);
+  0x01 (332) and 0x08 (44) occur besides. 0x11 and 0x04 are 1 on every animation.
+- The animation's u32 at 0x3C (CodeWalker's `UsageCount`) is 1 + the number of the dictionary's clips that play it, on
+  every animation.
+- The u32 at 0x1C varies (1,270 values, 0x30080E02 on a fifth); not understood.
+
+Every Legacy and Enhanced dictionary reads back with the same graph but four: `x64f.rpf/levels/gta5/destruction/
+{exterior,interior}/des_{bridge,setpiece,fib_ceiling2,hosp_ceil}.rpf` are AES-encrypted archives of older resources
+(ycd 43, ydr 164, ybd 40) whose streams inflate neither after AES nor NG decryption, in ragekit or in CodeWalker (the
+same bytes come out of both); Enhanced's copies read.
