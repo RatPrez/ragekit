@@ -42,6 +42,7 @@
 #include "script.h"
 #include "json.h"
 #include "gfx.h"
+#include "gfx_build.h"
 #include "posematcher.h"
 #include "cachedat.h"
 #include "heightmap.h"

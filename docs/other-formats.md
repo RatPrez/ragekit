@@ -194,7 +194,51 @@ binary file (a list of content ids), not JSON.
 rectangle and every tag's bytes (code, payload, and whether the length was written in its long form), so an
 uncompressed movie is written back byte for byte and the compressed one as the same movie; `exports()` lists the
 symbol names of its ExportAssets tags. Every movie of both editions reads back. The ActionScript (DoAction / DoABC
-tags) and the shapes stay as bytes.
+tags) stays as bytes.
+
+`gfx_build.h` reads the drawing tags into their fields and makes them from scratch: `read_shape` / `shape_tag`
+(DefineShape 1 to 4: fill styles solid, gradient, focal and bitmap; line styles 1 and 2; the edge records as SWF keeps
+them, style changes with an optional move and new style arrays, straight and curved edges as deltas), `read_sprite` /
+`sprite_tag`, `read_place` / `place_tag` (PlaceObject2 and 3: matrix, colour transform, ratio, name, clip depth, class
+name, blend mode; filters and clip actions as bytes), frame labels, ExportAssets, the background, FileAttributes,
+Scaleform's ExporterInfo (tag 1000: version 0x36F, flags 2, bitmap format 14, the movie's name, the code offsets) and
+the movie header (`frame_header`: rectangle, rate, count). A field read from a file keeps the bit count it was written
+with (`BitHint`; the exporters differ: Flash writes -1 in two bits, Scaleform's tools a zero translation in one bit or
+none), so every DefineShape (20,399), PlaceObject (113,133), sprite (39,023), frame label and ExporterInfo of the 1,160
+Legacy movies is written back byte for byte (`rk_gfx_test`). `shape_paths` gives the edges as absolute paths with the
+styles in force, `shape_fill_areas` the area each solid colour covers, and `ShapeBuilder` makes a shape of filled
+polygons in layers (a later layer draws over an earlier one) with the fill on the polygon's inside whichever way its
+points run. `rk gfx <file> [-v]` prints a movie's tags as a tree with its shapes, fill areas and placements.
+
+### The interior minimaps
+
+The game draws the floor plan of an interior on the minimap from `int<joaat of the MLO archetype's name, decimal>.gfx`
+in `scaleform_minimap.rpf`: 106 in `x64b.rpf/data/cdimages/` (the base game: `int2604216443.gfx` = `V_Shop_247`,
+`int3273555063.gfx` = `V_Michael`) and 184 in `update.rpf/x64/patch/data/cdimages/` (the DLC interiors; a few names are
+groups of MLOs: `apa_v_mp_h_01` for `apa_v_mp_h_01_a ..`). Each exports one symbol, the archetype's name (case as the
+artist typed it), and holds:
+
+- per level a sprite holding one DefineShape2 (rarely 1, 3 or 4) with no line styles: everything is filled polygons in
+  layers, drawn by the artists over the interior on a 10 cm grid: a dark silhouette of the whole level including the
+  walls, the floors of the rooms in a light grey over it (walls are the dark gaps between floors, as thick as the walls),
+  furniture and fixtures in a mid grey, stairs and the exits (a strip in the outer wall) in white;
+- a sprite placing the level sprites at the same spot (identity matrix) at increasing depths, named `level_0`,
+  `level_1` ... (`level_u1` on 12 movies and `level_u2` on 6, below ground), each with a colour transform of alpha 0: the game
+  shows the level the player is on;
+- the main timeline: frame label `INT<hash>`, the levels' sprite placed as `interior` with a scale (0.1 on 141 movies,
+  0.05 on 78, 0.02, 0.2, 1 ...) and no translation, 20 frames at 30 fps in a 300 x 300 px frame, and the class
+  `com.rockstargames.gtav.minimap.INTERIORS` (its constructor calls the game with `INTERIOR_IS_LOADED`).
+
+Colours (the first three fills of a movie): `#434343` silhouette, `#969696` floor, `#707070` furniture on 105 movies (the
+newer set), `#424242` / `#959595` / `#6F6F6F` on 46 (the base game's), white for stairs and exits on 247.
+
+Scale: the drawing is in the MLO's own space with y flipped (the movie's y down = the interior's -y) and the origin at
+the MLO's origin, and after the `interior` scale one movie pixel (20 twips) is one metre. Measured on the movies whose
+shapes match their rooms' boxes: `m24_1_dlc_int_mod` 20.1 / 20.1 twips per metre on x / y (shape -16.71 .. 16.66 m,
+rooms -16.60 .. 16.57 m), `m25_1_int_tycoon_smoke_heli` 20.1 / 19.8, `V_Shop_247` -4.02 .. 7.63 m against its limbo box
+-3.83 .. 7.56 m; the median over 203 movies is 25.8 because room boxes are loose and many drawings add outside areas.
+One movie serves every instance of the archetype (`v_shop_247` is placed 20 times at different headings), so the game
+turns and moves it by the instance (GUESS, from that and the lack of any position in the movies).
 
 ## Pose matchers (`posematcher.h`)
 

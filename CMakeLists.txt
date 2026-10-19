@@ -70,6 +70,7 @@ add_library(ragekit STATIC
     src/json.cpp
     src/map_views.cpp
     src/gfx.cpp
+    src/gfx_build.cpp
     src/posematcher.cpp
     src/cachedat.cpp
     src/heightmap.cpp
@@ -151,6 +152,8 @@ if (RAGEKIT_BUILD_TESTS)
     target_link_libraries(rk_bench PRIVATE ragekit)
     add_executable(rk_gameindex_test tests/gameindex_test.cpp)   # the index's archives and their load ranks (with an install)
     target_link_libraries(rk_gameindex_test PRIVATE ragekit)
+    add_executable(rk_gfx_test tests/gfx_test.cpp)   # Scaleform movies built, written and read back; every game movie's shapes and places byte for byte
+    target_link_libraries(rk_gfx_test PRIVATE ragekit)
     add_executable(rk_describe_test tests/describe_test.cpp)   # describe(): the facts of files built in memory
     target_link_libraries(rk_describe_test PRIVATE ragekit)
     add_executable(rk_materials_test tests/materials_test.cpp)   # collision material names and materials.dat

@@ -129,6 +129,85 @@ static int cmd_info(const std::string& path, bool verbose) {
     return 0;
 }
 
+// rk gfx <file.gfx> [-v]: a Scaleform movie's tags as a tree (sprites indented), its shapes with their styles, bounds
+// and the area each fill colour covers, placements with their names and matrices; -v adds every shape record
+static int cmd_gfx(const std::string& path, bool verbose) {
+    const GfxMovie m = read_gfx(rsc::read_file(path));
+    const gfx::Rect fr = gfx::frame_rect(m);
+    std::printf("%s movie v%d, frame %d..%d x %d..%d twips, %.2f fps, %u frames, %zu tags\n", m.compressed ? "CFX" : "GFX", m.version,
+                fr.x_min, fr.x_max, fr.y_min, fr.y_max, m.frame_rate(), m.frame_count(), m.tags.size());
+    const gfx::TagWalk w = gfx::all_tags(m);
+    auto colour = [](const gfx::Rgba& c) { char b[16]; std::snprintf(b, sizeof b, "#%02X%02X%02X%02X", c.r, c.g, c.b, c.a); return std::string(b); };
+    for (const gfx::TagRef& t : w.tags) {
+        const std::string ind(2 + 2 * t.sprite_depth, ' ');
+        const GfxTag& g = *t.tag;
+        switch (g.code) {
+        case gfx::kDefineShape: case gfx::kDefineShape2: case gfx::kDefineShape3: case gfx::kDefineShape4: {
+            const gfx::Shape s = gfx::read_shape(g);
+            size_t edges = 0, curves = 0, layers = 1;
+            for (const gfx::ShapeRecord& r : s.records) {
+                edges += r.kind != gfx::ShapeRecord::Style;
+                curves += r.kind == gfx::ShapeRecord::Curve;
+                layers += r.new_styles;
+            }
+            std::printf("%sDefineShape%d id %u: bounds %d..%d x %d..%d, %zu layers, %zu edges (%zu curves)\n", ind.c_str(), s.version, s.id,
+                        s.bounds.x_min, s.bounds.x_max, s.bounds.y_min, s.bounds.y_max, layers, edges, curves);
+            for (const auto& [c, a] : gfx::shape_fill_areas(s)) std::printf("%s  fill %s: %.0f twips^2\n", ind.c_str(), colour(c).c_str(), a);
+            for (const gfx::LineStyle& l : s.lines) std::printf("%s  line %u twips %s\n", ind.c_str(), l.width, colour(l.colour).c_str());
+            if (verbose) {
+                for (const gfx::ShapeRecord& r : s.records) {
+                    if (r.kind == gfx::ShapeRecord::Style) {
+                        std::printf("%s    style", ind.c_str());
+                        if (r.has_move) std::printf(" move %d,%d", r.move_x, r.move_y);
+                        if (r.fill0) std::printf(" fill0 %u", *r.fill0);
+                        if (r.fill1) std::printf(" fill1 %u", *r.fill1);
+                        if (r.line) std::printf(" line %u", *r.line);
+                        if (r.new_styles) {
+                            std::printf(" new styles:");
+                            for (const gfx::FillStyle& f : r.fills) std::printf(" %s", f.type ? "(not solid)" : colour(f.colour).c_str());
+                        }
+                        std::printf("\n");
+                    } else if (r.kind == gfx::ShapeRecord::Line) {
+                        std::printf("%s    line %d,%d\n", ind.c_str(), r.dx, r.dy);
+                    } else {
+                        std::printf("%s    curve %d,%d %d,%d\n", ind.c_str(), r.cdx, r.cdy, r.dx, r.dy);
+                    }
+                }
+            }
+            break;
+        }
+        case gfx::kDefineSprite: {
+            const gfx::Sprite s = gfx::read_sprite(g);
+            std::printf("%sDefineSprite id %u, %u frames\n", ind.c_str(), s.id, s.frame_count);
+            break;
+        }
+        case gfx::kPlaceObject2: case gfx::kPlaceObject3: {
+            const gfx::Place p = gfx::read_place(g);
+            std::printf("%sPlaceObject%d depth %u", ind.c_str(), p.place3 ? 3 : 2, p.depth);
+            if (p.character) std::printf(" character %u", *p.character);
+            if (!p.name.empty()) std::printf(" \"%s\"", p.name.c_str());
+            if (p.matrix) std::printf(" matrix [%.4f %.4f %.4f %.4f %d %d]", p.matrix->a(), p.matrix->b(), p.matrix->c(), p.matrix->d(), p.matrix->tx, p.matrix->ty);
+            if (p.colour && p.colour->has_mul) std::printf(" mul %d %d %d %d", p.colour->mul[0], p.colour->mul[1], p.colour->mul[2], p.colour->mul[3]);
+            if (p.ratio) std::printf(" ratio %u", *p.ratio);
+            std::printf("\n");
+            break;
+        }
+        case gfx::kFrameLabel: std::printf("%sFrameLabel \"%s\"\n", ind.c_str(), gfx::read_frame_label(g).c_str()); break;
+        case gfx::kShowFrame: std::printf("%sShowFrame\n", ind.c_str()); break;
+        case gfx::kEnd: break;
+        case gfx::kExporterInfo: {
+            const gfx::ExporterInfo e = gfx::read_exporter_info(g);
+            std::printf("%sExporterInfo version 0x%X flags %u bitmap format %u name \"%s\", %zu code offsets\n", ind.c_str(), e.version, e.flags,
+                        e.bitmap_format, e.swf_name.c_str(), e.code_offsets.size());
+            break;
+        }
+        default: std::printf("%stag %u, %zu bytes\n", ind.c_str(), g.code, g.payload.size());
+        }
+    }
+    for (const std::string& e : m.exports()) std::printf("export \"%s\"\n", e.c_str());
+    return 0;
+}
+
 // rk hex <file> [sys|gfx] [offset] [bytes]: a resource segment (inflated) or a plain file as hex, 16 bytes a line
 static int cmd_hex(const std::vector<std::string>& args) {
     Bytes file = rsc::read_file(args[0]);
@@ -897,6 +976,7 @@ int main(int argc, char** argv) {
         if (cmd == "ymf-make" && args.size() >= 4) return cmd_ymf_make(args);
         if (cmd == "fxc" && args.size() == 1) return cmd_fxc(args[0]);
         if (cmd == "hex" && !args.empty()) return cmd_hex(args);
+        if (cmd == "gfx" && args.size() == 1) return cmd_gfx(args[0], verbose);
         if (cmd == "awc" && args.size() == 3 && args[0] == "wav") {   // rk awc wav <file.awc> <dir>: every sound as a .wav
             fs::create_directories(args[2]);
             const auto sounds = awc_decode(read_awc(rsc::read_file(args[1])));
@@ -932,7 +1012,7 @@ int main(int argc, char** argv) {
             if (rc != 2) return rc;
         }
         std::printf("usage (any command takes --enhanced or --legacy: the edition written and the install the index opens; default legacy):\n"
-                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk hex <file> [sys|gfx] [offset] [bytes]\n  rk awc wav <file.awc> <dir>\n  rk awc ls <file.awc|archive.rpf>...\n  rk awc make <out.awc> <name=file.wav>... [--adpcm]\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
+                    "  rk convert <in.ytd|ydr|ydd|yft|ypt> <out> --enhanced|--legacy\n  rk xml <file.ydr|ydd|ybn|ytd> <out folder>\n  rk info <file> [-v]\n  rk dump <file>\n  rk hex <file> [sys|gfx] [offset] [bytes]\n  rk gfx <file.gfx> [-v]\n  rk awc wav <file.awc> <dir>\n  rk awc ls <file.awc|archive.rpf>...\n  rk awc make <out.awc> <name=file.wav>... [--adpcm]\n  rk roundtrip <in> <out>\n  rk ytd export <ytd> <dir>\n  rk ytd build <dir> <out.ytd>\n"
                     "  rk gltf <ydr|ydd|yft> <out.glb> [textures.ytd ...] [--all-lods] [--no-textures]\n"
                     "  rk rpf ls <file.rpf> [path] [-r] [--nested] [--tsv [--hash]]\n  rk rpf cat <file.rpf> <entry path> <out>\n  rk rpf extract <file.rpf> <out dir> [path] [--nested]\n"
                     "  rk rpf keys <GTA5.exe> [key folder] [--magic <magic.dat>]\n  rk rpf pack <dir> <out.rpf> [--aes | --ng]\n  rk rpf add <rpf> <entry path> <file>\n"

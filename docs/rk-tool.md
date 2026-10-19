@@ -9,6 +9,7 @@ opens ([enhanced.md](enhanced.md)). Without it, files are written back in their 
 rk convert <in> <out> --enhanced|--legacy   a .ytd/.ydr/.ydd/.yft written for the other edition
 rk info <file> [-v]                    what the file holds: the facts of describe() (every kind the library reads)
 rk hex <file> [sys|gfx] [offset] [bytes]   a resource segment (inflated) or a plain file as hex
+rk gfx <file.gfx> [-v]                 a Scaleform movie's tags, shapes (fill areas, -v every record) and placements
 rk roundtrip <in> <out>                read, write, read back (the byte-exact kinds say whether the output is identical)
 rk awc wav <file.awc> <dir>            every sound of an audio container as a .wav
 rk awc ls <file.awc | archive.rpf>...  every stream's chunks and format (archives: every .awc in them)
