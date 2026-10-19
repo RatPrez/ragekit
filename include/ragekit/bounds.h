@@ -156,6 +156,14 @@ struct Bound {
 BoundPtr read_ybn(std::span<const uint8_t> file);
 Bytes write_ybn(const Bound& bound);
 
+/// .ybd files: a dictionary of bounds by name hash (the game's ped_props.ybd, version 43 as .ybn).
+struct BoundDictionary {
+    std::vector<uint32_t> hashes;   // parallel to bounds, sorted as stored
+    std::vector<BoundPtr> bounds;
+};
+BoundDictionary read_ybd(std::span<const uint8_t> file);
+Bytes write_ybd(const BoundDictionary& d);
+
 /// A collision triangle in the space the outermost bound sits in, with the material of its polygon.
 struct BoundTriangle {
     Vec3 v[3];

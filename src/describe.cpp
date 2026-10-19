@@ -311,6 +311,12 @@ Fact resource(std::span<const uint8_t> file, const std::string& ext, const Ctx& 
             if (c.opt.verbose)
                 for (const ExpressionTrack& t : e.tracks()) ef.add(fmt("bone %u", t.bone), fmt("track %u, format %u, flags 0x%02X", t.track, t.flags & 0x7F, t.flags & 0x80));
         }
+    } else if (ext == ".ybd") {
+        const BoundDictionary d = read_ybd(file);
+        root.label = "bound dictionary";
+        root.value = fmt("%zu bounds", d.bounds.size());
+        for (size_t i = 0; i < d.bounds.size(); i++)
+            if (c.show(root, i, d.bounds.size()) && d.bounds[i]) bound(root.add(hash_name(d.hashes[i])), c, *d.bounds[i]);
     } else if (ext == ".yfd") {
         const auto fl = read_yfd(file).filters();
         root.label = "frame filter dictionary";

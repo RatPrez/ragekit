@@ -1116,6 +1116,15 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             const ClipDictionary b = read_ycd_checked(w, &census2);
             if (!same_graph(a.root, b.root, &diff)) c.fail("ycd: " + diff);
             if (census2) c.fail("ycd: the written file has pointer-like values the schema does not know");
+        } else if (ext == ".ybd") {
+            const BoundDictionary a = read_ybd(file);
+            Bytes w = write_ybd(a); mix(w); out_size = w.size();
+            const BoundDictionary b = read_ybd(w);
+            c.eq(a.hashes, b.hashes, "ybd.hashes");
+            c.eq(a.bounds.size(), b.bounds.size(), "ybd.count");
+            for (size_t i = 0; i < a.bounds.size() && i < b.bounds.size(); i++)
+                if (a.bounds[i] && b.bounds[i]) compare_bound(c, *a.bounds[i], *b.bounds[i], "ybd[" + hash_name(a.hashes[i]) + "]");
+            same_root(c, file, w, "ybd", 0x40, {0x08, 0x20, 0x30});
         } else if (ext == ".yed" || ext == ".yfd") {
             size_t census = 0, census2 = 0;
             std::string where, diff;
@@ -1185,7 +1194,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1233,6 +1242,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     else if (ext == ".ycd") (void)read_ycd(file);
     else if (ext == ".yed") (void)read_yed(file);
     else if (ext == ".yfd") (void)read_yfd(file);
+    else if (ext == ".ybd") (void)read_ybd(file);
     else return false;
     return true;
 }

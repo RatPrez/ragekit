@@ -142,5 +142,11 @@ weight (all of type 4, multi-weight). Both are pgDictionaries (name hashes and a
 a graph of blocks like the clip dictionaries, with views for the names, tracks, streams and weights; every game file of
 both editions comes back with the same graph and no pointer-like value the schema does not know.
 
-The game also has four `.ybd` bound dictionaries, all in the AES-encrypted `levels/gta5/destruction` archives whose
-streams do not inflate (see the clip dictionaries above): there is nothing to read them from.
+## Bound dictionaries (`bounds.h`)
+
+`.ybd` files are pgDictionaries of collision bounds (`BoundDictionary`: name hashes and bounds, read and written with
+the .ybn code). The game has four: `x64e.rpf/levels/generic/ped_props.rpf/ped_props.ybd` (version 43, three boxes;
+it reads back field for field in both editions) and three in the destruction archives of `x64f.rpf`, one whose stream
+does not inflate (above) and two of version 42, an older bound layout ragekit does not read: `read_ybd` and `read_ybn`
+throw for a version other than 43 (until this check a version 42 file read as geometries without vertices; every .ybn
+of both installs is version 43).

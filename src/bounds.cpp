@@ -293,8 +293,47 @@ std::shared_ptr<Bound> read_bound(const Reader& r, uint64_t ptr, std::map<uint64
 
 BoundPtr read_ybn(std::span<const uint8_t> file) {
     rsc::Resource res = rsc::Resource::load(file);
+    if (res.version != rsc::kYbn) throw Error("ybn: resource version " + std::to_string(res.version) + ", expected 43 (an older layout is not read)");
     Reader r(res);
     return read_bound(r, rsc::kSystemBase);
+}
+
+// pgDictionary<phBound> (0x40): 0x20 hashes (ptr, count:u16, capacity:u16), 0x30 bounds (pointer list)
+BoundDictionary read_ybd(std::span<const uint8_t> file) {
+    rsc::Resource res = rsc::Resource::load(file);
+    if (res.version != rsc::kYbn) throw Error("ybd: resource version " + std::to_string(res.version) + ", expected 43 (an older layout is not read)");
+    Reader r(res);
+    const uint64_t root = rsc::kSystemBase;
+    BoundDictionary d;
+    d.hashes = r.array<uint32_t>(r.u64(root + 0x20), r.u16(root + 0x28));
+    std::map<uint64_t, std::shared_ptr<Bound>> seen;
+    for (uint64_t p : r.array<uint64_t>(r.u64(root + 0x30), r.u16(root + 0x38))) d.bounds.push_back(read_bound(r, p, &seen));
+    if (d.hashes.size() != d.bounds.size()) throw Error("ybd: " + std::to_string(d.hashes.size()) + " names for " + std::to_string(d.bounds.size()) + " bounds");
+    return d;
+}
+
+Bytes write_ybd(const BoundDictionary& d) {
+    if (d.hashes.size() != d.bounds.size()) throw Error("ybd: hashes and bounds differ in count");
+    if (d.bounds.size() > 0xFFFF) throw Error("ybd: more than 65535 bounds");
+    Builder b;
+    BlockId root = b.alloc(Segment::System, 0x40);
+    BlockId pages = b.alloc_pages_info();
+    BlockId hashes = d.hashes.empty() ? BlockId{} : b.array(Segment::System, d.hashes);
+    BlockId ptrs = d.bounds.empty() ? BlockId{} : b.alloc(Segment::System, d.bounds.size() * 8);
+    std::map<const Bound*, BlockId> written;
+    for (size_t i = 0; i < d.bounds.size(); i++)
+        if (d.bounds[i]) b.pointer(ptrs, i * 8, write_bound(b, *d.bounds[i], &written));
+    BlockWriter w(b, root);
+    w.u32(0x405715A0);   // the dictionary's vtable in the game's file
+    w.u32(1);
+    w.ptr(pages);
+    w.u64(0);
+    w.u32(1);
+    w.u32(0);
+    const uint16_t n = (uint16_t)d.bounds.size();
+    w.ptr(hashes); w.u16(n); w.u16(n); w.u32(0);
+    w.ptr(ptrs); w.u16(n); w.u16(n); w.u32(0);
+    return b.build(rsc::kYbn);
 }
 
 // ================================================================ writing
