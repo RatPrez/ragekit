@@ -275,6 +275,7 @@ Image decode_texels(TextureFormat f, uint32_t w, uint32_t h, std::span<const uin
                 }
                 case TextureFormat::A8: d[0] = d[1] = d[2] = 0; d[3] = s[i]; break;
                 case TextureFormat::L8: d[0] = d[1] = d[2] = s[i]; d[3] = 255; break;
+                case TextureFormat::L16: d[0] = d[1] = d[2] = s[i * 2 + 1]; d[3] = 255; break;   // the high byte
                 default: throw Error(std::string("cannot decode texture format ") + texture_format_name(f));
             }
         }
@@ -664,6 +665,7 @@ Bytes encode_level(const Image& img, TextureFormat f) {
                 case TextureFormat::A8B8G8R8: std::memcpy(&out[i * 4], s, 4); break;
                 case TextureFormat::A8: out[i] = s[3]; break;
                 case TextureFormat::L8: out[i] = (uint8_t)((s[0] * 299 + s[1] * 587 + s[2] * 114) / 1000); break;
+                case TextureFormat::L16: out[i * 2] = out[i * 2 + 1] = (uint8_t)((s[0] * 299 + s[1] * 587 + s[2] * 114) / 1000); break;   // v * 257
                 default: throw Error(std::string("cannot encode texture format ") + texture_format_name(f));
             }
         }
@@ -749,6 +751,7 @@ Texture read_dds(std::span<const uint8_t> file, const std::string& name) {
                 case 87: case 91: f = TextureFormat::A8R8G8B8; break;
                 case 65: f = TextureFormat::A8; break;
                 case 61: f = TextureFormat::L8; break;
+                case 56: f = TextureFormat::L16; break;
                 default: throw Error("DDS: unsupported DXGI format " + std::to_string(dxgi));
             }
         } else if (cc == fourcc("DXT1")) f = TextureFormat::DXT1;
@@ -764,7 +767,7 @@ Texture read_dds(std::span<const uint8_t> file, const std::string& name) {
         else if (bpp == 16 && rmask == 0x7C00) f = TextureFormat::A1R5G5B5;
         else throw Error("DDS: unsupported RGB layout");
     } else if (pfflags & 0x2) { f = TextureFormat::A8; }
-    else if (pfflags & 0x20000) { f = TextureFormat::L8; }
+    else if (pfflags & 0x20000) { f = bpp == 16 ? TextureFormat::L16 : TextureFormat::L8; }
     else throw Error("DDS: unsupported pixel format");
     (void)gmask; (void)bmask;
     Texture t;
@@ -810,6 +813,7 @@ Bytes write_dds(const Texture& t) {
         case TextureFormat::A1R5G5B5: wr32(pf + 4, 0x41); wr32(pf + 12, 16); wr32(pf + 16, 0x7C00); wr32(pf + 20, 0x03E0); wr32(pf + 24, 0x001F); wr32(pf + 28, 0x8000); break;
         case TextureFormat::A8: wr32(pf + 4, 0x2); wr32(pf + 12, 8); wr32(pf + 28, 0xFF); break;
         case TextureFormat::L8: wr32(pf + 4, 0x20000); wr32(pf + 12, 8); wr32(pf + 16, 0xFF); break;
+        case TextureFormat::L16: wr32(pf + 4, 0x20000); wr32(pf + 12, 16); wr32(pf + 16, 0xFFFF); break;
         default: throw Error("write_dds: unknown texture format");
     }
     wr32(h + 104, 0x1000 | (t.levels > 1 ? 0x400008 : 0)); // caps: texture (+ mipmap, complex)

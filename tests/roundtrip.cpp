@@ -74,6 +74,7 @@ static void compare_texture(Cmp& c, const Texture& a, const Texture& b, const st
 
 static void compare_txd(Cmp& c, const TextureDictionary& a, const TextureDictionary& b, const std::string& p) {
     c.eq(a.textures.size(), b.textures.size(), p + ".count");
+    c.eq(a.empty_slots, b.empty_slots, p + ".empty_slots");
     for (size_t i = 0; i < a.textures.size() && i < b.textures.size(); i++) compare_texture(c, a.textures[i], b.textures[i], p + "[" + a.textures[i].name + "]");
 }
 
@@ -691,7 +692,11 @@ struct Gen9Walk {
         if (!pa || !pb) return;
         const uint16_t n = a.u16(pa + 0x38);
         if (n != b.u16(pb + 0x38)) { c.fail(where + "txd count"); return; }
-        for (uint16_t i = 0; i < n; i++) texture(a.u64(a.u64(pa + 0x30) + 8ull * i), b.u64(b.u64(pb + 0x30) + 8ull * i));
+        for (uint16_t i = 0; i < n; i++) {
+            const uint64_t ta = a.u64(a.u64(pa + 0x30) + 8ull * i), tb = b.u64(b.u64(pb + 0x30) + 8ull * i);
+            if ((ta == 0) != (tb == 0)) { c.fail(where + "txd: an empty slot in one file only"); return; }
+            if (ta) texture(ta, tb);   // a null pointer: an empty slot (TextureDictionary::empty_slots)
+        }
     }
     void shader(uint64_t pa, uint64_t pb) {
         bytes(pa, pb, 64, {8, 0x10, 0x18, 0x20}, {}, "shader");

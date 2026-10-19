@@ -34,6 +34,14 @@ RMS error to limits), BC7 (mode 6 only: one subset, RGBA endpoints with p-bits, 
 uncompressed formats: every format the game's textures use (no game texture is BC6H), with the mip chain down to 1x1 unless told otherwise; `read_dds`
 takes a DDS file as a texture.
 
+A dictionary can list names with no texture (a null pointer): the patch drawables of `txd_map_patches.rpf` list 22
+names for 2 textures (`cs1_03_shps1.ydr`). `TextureDictionary::empty_slots` keeps those hashes and the writer puts them
+back in hash order; until then they were dropped, and the rewritten dictionary listed 2. Enhanced's texture views
+carry the kind of texture in their word at 0x68: 0x41 on every 2D texture (341,278), 0x61 on the one 2D array and 0xA3
+on the one volume (both in `update.rpf/x64/textures/graphics.ytd`); ragekit wrote 0x61 for the volume. That file's
+`blue_noise_64` is R16_UNORM, which reads as `TextureFormat::L16` (D3DFMT_L16) and converts to Legacy; a format with no
+Legacy code now throws on a Legacy write instead of being written as format 0 without its data.
+
 ## Drawables
 
 ```cpp

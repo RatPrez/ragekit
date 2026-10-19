@@ -17,6 +17,7 @@ const char* texture_format_name(TextureFormat f) {
         case TextureFormat::A8:       return "D3DFMT_A8";
         case TextureFormat::A8B8G8R8: return "D3DFMT_A8B8G8R8";
         case TextureFormat::L8:       return "D3DFMT_L8";
+        case TextureFormat::L16:      return "D3DFMT_L16";
         case TextureFormat::DXT1:     return "D3DFMT_DXT1";
         case TextureFormat::DXT3:     return "D3DFMT_DXT3";
         case TextureFormat::DXT5:     return "D3DFMT_DXT5";
@@ -30,7 +31,7 @@ const char* texture_format_name(TextureFormat f) {
 TextureFormat texture_format_from_name(std::string_view n) {
     static const TextureFormat all[] = {
         TextureFormat::A8R8G8B8, TextureFormat::X8R8G8B8, TextureFormat::A1R5G5B5, TextureFormat::A8,
-        TextureFormat::A8B8G8R8, TextureFormat::L8, TextureFormat::DXT1, TextureFormat::DXT3,
+        TextureFormat::A8B8G8R8, TextureFormat::L8, TextureFormat::L16, TextureFormat::DXT1, TextureFormat::DXT3,
         TextureFormat::DXT5, TextureFormat::ATI1, TextureFormat::ATI2, TextureFormat::BC7};
     for (auto f : all) {
         std::string_view name = texture_format_name(f);
@@ -52,7 +53,7 @@ uint32_t texture_format_unit_bytes(TextureFormat f) {
         case TextureFormat::DXT1: case TextureFormat::ATI1: return 8;
         case TextureFormat::DXT3: case TextureFormat::DXT5: case TextureFormat::ATI2: case TextureFormat::BC7: return 16;
         case TextureFormat::A8R8G8B8: case TextureFormat::X8R8G8B8: case TextureFormat::A8B8G8R8: return 4;
-        case TextureFormat::A1R5G5B5: return 2;
+        case TextureFormat::A1R5G5B5: case TextureFormat::L16: return 2;
         case TextureFormat::A8: case TextureFormat::L8: return 1;
         default: return 0;
     }
@@ -89,6 +90,7 @@ uint8_t texture_format_gen9(TextureFormat f) {
         case TextureFormat::A8:       return 0x41;                                 // A8_UNORM
         case TextureFormat::A8B8G8R8: return 0x1C;                                 // R8G8B8A8_UNORM
         case TextureFormat::L8:       return 0x3D;                                 // R8_UNORM
+        case TextureFormat::L16:      return 0x38;                                 // R16_UNORM
         case TextureFormat::DXT1:     return 0x47;                                 // BC1_UNORM
         case TextureFormat::DXT3:     return 0x4A;                                 // BC2_UNORM
         case TextureFormat::DXT5:     return 0x4D;                                 // BC3_UNORM
@@ -106,6 +108,7 @@ TextureFormat texture_format_from_gen9(uint8_t code) {
         case 0x41: return TextureFormat::A8;
         case 0x1B: case 0x1C: case 0x1D: return TextureFormat::A8B8G8R8;
         case 0x3C: case 0x3D: return TextureFormat::L8;
+        case 0x35: case 0x38: return TextureFormat::L16;
         case 0x46: case 0x47: case 0x48: return TextureFormat::DXT1;
         case 0x49: case 0x4A: case 0x4B: return TextureFormat::DXT3;
         case 0x4C: case 0x4D: case 0x4E: return TextureFormat::DXT5;
@@ -263,7 +266,10 @@ TextureDictionary read_txd(const Reader& r, uint64_t ptr) {
     auto hashes = r.array<uint32_t>(hashes_ptr, hashes_count);
     auto ptrs = r.array<uint64_t>(tex_ptr, tex_count);
     for (size_t i = 0; i < ptrs.size(); i++) {
-        if (ptrs[i] == 0) continue;
+        if (ptrs[i] == 0) {
+            if (i < hashes.size()) d.empty_slots.push_back(hashes[i]);
+            continue;
+        }
         Texture t = read_texture(r, ptrs[i]);
         if (t.name.empty() && i < hashes.size()) t.name = hash_name(hashes[i]);
         d.textures.push_back(std::move(t));
@@ -350,7 +356,9 @@ static BlockId write_texture_gen9(Builder& b, const Texture& t) {
     w.u64(0);                               // 0x50
     w.u64(g.srv_vft);                       // 0x58: shader resource view (Texture2D)
     w.u64(0);
-    w.u16(t.depth > 1 ? 0x61 : 0x41);
+    // the view's kind: 0x41 a 2D texture, 0x61 a 2D array (depth > 1), 0xA3 a volume (dimension 3): the 341,278 / 1 / 1 of
+    // the Enhanced install's dictionaries (graphics.ytd's cloudnoisevolume is the volume)
+    w.u16(g.dimension == 3 ? 0xA3 : t.depth > 1 ? 0x61 : 0x41);
     w.u16(0xFFFF);
     w.u32(0xFFFFFFFF);
     w.u64(0);
@@ -360,6 +368,10 @@ static BlockId write_texture_gen9(Builder& b, const Texture& t) {
 
 BlockId write_texture(Builder& b, const Texture& t) {
     if (b.gen9()) return write_texture_gen9(b, t);
+    // an Enhanced format Legacy has no D3D code for (graphics.ytd's blue_noise_64) would be written as format 0 and read
+    // back without its data
+    if (t.format == TextureFormat::Unknown)
+        throw Error("texture '" + t.name + "': its format (Enhanced code " + std::to_string(t.gen9 ? t.gen9->format : 0) + ") has no Legacy equivalent");
     BlockId blk = b.alloc(Segment::System, 144);
     BlockId name = t.name.empty() ? BlockId{} : b.string(t.name);
     BlockId data = b.array(Segment::Graphics, t.data, 16);
@@ -429,19 +441,24 @@ BlockId write_txd(Builder& b, const TextureDictionary& txd_in, TextureBlocks* bl
     txd.sort();
     BlockId blk = b.alloc(Segment::System, 64);
     BlockId pages = root ? b.alloc_pages_info() : BlockId{};
+    // the textures and the empty slots merged in hash order (an empty slot is a null pointer)
+    std::vector<std::pair<uint32_t, const Texture*>> slots;
+    for (auto& t : txd.textures) slots.push_back({t.name_hash(), &t});
+    for (uint32_t h : txd.empty_slots) slots.push_back({h, nullptr});
+    std::stable_sort(slots.begin(), slots.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
     std::vector<uint32_t> hashes;
     std::vector<BlockId> texblocks;
-    for (auto& t : txd.textures) {
-        hashes.push_back(t.name_hash());
-        BlockId tb = write_texture(b, t);
+    for (auto& [h, t] : slots) {
+        hashes.push_back(h);
+        BlockId tb = t ? write_texture(b, *t) : BlockId{};
         texblocks.push_back(tb);
-        if (blocks) (*blocks)[t.name_hash()] = tb;
+        if (blocks && t) (*blocks)[h] = tb;
     }
     BlockId hashes_blk = b.array(Segment::System, hashes);
     BlockId ptrs_blk;
     if (!texblocks.empty()) {
         ptrs_blk = b.alloc(Segment::System, texblocks.size() * 8);
-        for (size_t i = 0; i < texblocks.size(); i++) b.pointer(ptrs_blk, i * 8, texblocks[i]);
+        for (size_t i = 0; i < texblocks.size(); i++) if (texblocks[i].valid()) b.pointer(ptrs_blk, i * 8, texblocks[i]);
     }
     BlockWriter w(b, blk);
     w.u32(txd_vft);

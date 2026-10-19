@@ -19,6 +19,7 @@ enum class TextureFormat : uint32_t {
     A8       = 28,
     A8B8G8R8 = 32,
     L8       = 50,
+    L16      = 81,   // 16-bit luminance (Enhanced's R16_UNORM: graphics.ytd's blue_noise_64)
     DXT1 = 0x31545844, // BC1
     DXT3 = 0x33545844, // BC2
     DXT5 = 0x35545844, // BC3
@@ -104,6 +105,9 @@ struct Texture {
 
 struct TextureDictionary {
     std::vector<Texture> textures; // kept sorted by name hash, as the game stores them
+    /// Name hashes the dictionary lists with no texture (a null pointer): the game's patch drawables
+    /// (`txd_map_patches.rpf`) keep the names of the textures they strip. Written back in their hash order.
+    std::vector<uint32_t> empty_slots;
 
     const Texture* find(uint32_t name_hash) const;
     const Texture* find(std::string_view name) const;

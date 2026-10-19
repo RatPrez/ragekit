@@ -82,6 +82,7 @@ std::string format_name(TextureFormat f) {
         case 28: return "D3DFMT_A8";
         case 32: return "D3DFMT_A8B8G8R8";
         case 50: return "D3DFMT_L8";
+        case 81: return "D3DFMT_L16";
         case 0x31545844: return "D3DFMT_DXT1";
         case 0x33545844: return "D3DFMT_DXT3";
         case 0x35545844: return "D3DFMT_DXT5";
