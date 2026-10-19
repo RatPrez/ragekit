@@ -378,6 +378,19 @@ Fact describe(std::span<const uint8_t> file, const std::string& name, const Desc
         for (const AwcAudio& s : awc_decode(a))
             so.add(hash_name(s.id), fmt("%u samples at %u Hz (%.2f s), %s", s.samples, s.sample_rate, s.sample_rate ? (double)s.samples / s.sample_rate : 0.0,
                                         s.codec == 4 ? "ADPCM" : s.codec == 0 ? "PCM" : fmt("codec %u, not decoded", s.codec).c_str()));
+    } else if ((ext == ".ugc" || ext == ".json") && [&] {
+                   size_t i = file.size() >= 3 && file[0] == 0xEF ? 3 : 0;
+                   while (i < file.size() && std::isspace(file[i])) i++;
+                   return i < file.size() && (file[i] == '{' || file[i] == '[');
+               }()) {
+        const JsonValue j = parse_json(std::string_view((const char*)file.data(), file.size()));
+        root = {"JSON", j.type == JsonValue::Type::Object ? fmt("an object of %zu members", j.members.size()) : fmt("a value of type %d", (int)j.type), {}};
+        for (size_t i = 0; i < j.members.size(); i++) {
+            if (!c.show(root, i, j.members.size())) break;
+            const JsonValue& m = j.members[i].second;
+            root.add(j.members[i].first, m.type == JsonValue::Type::Object ? fmt("%zu members", m.members.size()) : m.type == JsonValue::Type::Array ? fmt("%zu items", m.items.size())
+                                                                                                                    : m.type == JsonValue::Type::Bool ? (m.boolean ? "true" : "false") : m.text);
+        }
     } else if (ext == ".fxc") {
         const FxcFile f = read_fxc(file);
         root = {"compiled shader effect", fmt("vertex type %u", f.vertex_type), {}};

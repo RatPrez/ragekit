@@ -165,3 +165,11 @@ values, the code and strings joined, the statics, and the natives, which are sto
 (code size + index) & 63 they are the hashes the game's natives are known by (`WAIT` 0x4EDE34FBADD967A6 among the
 first file's). There is no decompiler. Version 12 is Legacy's; Enhanced's base scripts and four of Legacy's `mppilot`
 ones are version 10, the same layout. Every file of both editions reads back with the same graph.
+
+## JSON (`json.h`)
+
+The `.ugc` files (1,507 in Legacy: the Rockstar-made jobs and missions in the creator's format) and the few `.json`
+data files (`tunables.json`) are JSON. `parse_json` reads a document into a small DOM (objects keep their keys in the
+file's order, numbers their text), `write_json` writes it compact or indented with tabs as the game's files are, and
+every game file reads back as the same document. One `.ugc`, `x64w.rpf/dlcpacks/mpbusiness/.../ugc_rstar.ugc`, is a
+binary file (a list of content ids), not JSON.

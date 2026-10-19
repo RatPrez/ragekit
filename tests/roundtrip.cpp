@@ -907,6 +907,13 @@ template <class T> static bool same_pod(const std::vector<T>& a, const std::vect
     return a.size() == b.size() && (a.empty() || std::memcmp(a.data(), b.data(), a.size() * sizeof(T)) == 0);
 }
 
+// A JSON document starts with an object or an array (after a byte order mark and white space).
+static bool looks_json(const Bytes& f) {
+    size_t i = f.size() >= 3 && f[0] == 0xEF && f[1] == 0xBB && f[2] == 0xBF ? 3 : 0;
+    while (i < f.size() && (f[i] == ' ' || f[i] == '\t' || f[i] == '\r' || f[i] == '\n')) i++;
+    return i < f.size() && (f[i] == '{' || f[i] == '[');
+}
+
 // A format that must come back byte for byte: read -> write gives the file again.
 static bool test_exact(const std::string& label, const Bytes& file, const char* kind, const std::function<Bytes(const Bytes&)>& rewrite) {
     try {
@@ -929,6 +936,22 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
     const Game game = game_of_file(ext, file);
     if (ext == ".rel") return test_rel(label, file);
     if (ext == ".gxt2") return test_exact(label, file, "text table", [](const Bytes& f) { return write_gxt2(read_gxt2(f)); });
+    if ((ext == ".ugc" || ext == ".json") && !looks_json(file)) { g_untested = true; return true; }   // ugc_rstar.ugc is binary
+    if (ext == ".ugc" || ext == ".json") {
+        // JSON: parse -> write -> parse gives the same document (keys in order, numbers as written)
+        try {
+            const std::string_view text((const char*)file.data(), file.size());
+            const JsonValue a = parse_json(text);
+            const std::string w = write_json(a);
+            mix(Bytes(w.begin(), w.end()));
+            if (!(parse_json(w) == a)) { say("DIFF  %-60s  the written JSON reads back as a different document\n", label.c_str()); return false; }
+        } catch (const std::exception& e) {
+            say("FAIL  %-60s  %s\n", label.c_str(), e.what());
+            return false;
+        }
+        say("ok    %-60s  %zu bytes, JSON\n", label.c_str(), file.size());
+        return true;
+    }
     if (ext == ".awc" && !is_awc(file)) { g_untested = true; return true; }
     if (ext == ".awc") return test_exact(label, file, "audio container", [](const Bytes& f) { const AwcFile a = read_awc(f); (void)awc_decode(a); return write_awc(a); });
     if ((ext == ".meta" || ext == ".xml") && !is_rbf(file) && !is_pso(file)) {
@@ -1198,7 +1221,7 @@ static bool test_file(const fs::path& path) {
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
            ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2" ||
-           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc";
+           ext == ".yvr" || ext == ".ywr" || ext == ".ynd" || ext == ".ycd" || ext == ".awc" || ext == ".yed" || ext == ".yfd" || ext == ".ybd" || ext == ".ysc" || ext == ".ugc" || ext == ".json";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1225,6 +1248,7 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     if (ext == ".rel" || ext.rfind(".dat", 0) == 0 && ext.size() > 4) { (void)read_rel(file); return true; }
     if (ext == ".fxc") { (void)read_fxc(file); return true; }
     if (ext == ".gxt2") { (void)read_gxt2(file); return true; }
+    if (ext == ".ugc" || ext == ".json") { if (!looks_json(file)) return false; (void)parse_json(std::string_view((const char*)file.data(), file.size())); return true; }
     if (ext == ".awc") { if (!is_awc(file)) return false; (void)awc_decode(read_awc(file)); return true; }
     if (ext == ".sps") { (void)read_sps(std::string_view((const char*)file.data(), file.size()), name); return true; }
     if (ext == ".meta" || ext == ".xml") { (void)parse_xml(std::string_view((const char*)file.data(), file.size())); return true; }

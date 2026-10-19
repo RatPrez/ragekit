@@ -48,6 +48,15 @@ int main() {
     Bytes cut(ytd.begin(), ytd.begin() + 40);
     try { (void)describe(cut, "x.ytd"); } catch (const Error&) { threw = true; }
     check(threw, "a truncated resource throws");
+    // JSON: escapes, a surrogate pair, numbers as written, key order, a round trip; errors with their offset
+    const JsonValue j = parse_json("\xEF\xBB\xBF{\"b\":[1,-2.50,1e3,true,null],\"a\":\"x\\\"\\u00e9\\ud83d\\ude00\\n\"}");
+    check(j.members.size() == 2 && j.members[0].first == "b" && j.members[1].first == "a", "json: members in the file's order");
+    check(j.get("b")->items[1].text == "-2.50" && j.get("b")->items[2].number() == 1000 && j.get("b")->items[3].boolean, "json: numbers keep their text");
+    check(j.get("a")->text == "x\"\xC3\xA9\xF0\x9F\x98\x80\n", "json: escapes and a surrogate pair as UTF-8");
+    check(parse_json(write_json(j)) == j && parse_json(write_json(j, false)) == j, "json: written and read back, indented and compact");
+    threw = false;
+    try { (void)parse_json("{\"a\":[1,2}"); } catch (const Error& e) { threw = std::string(e.what()).find("byte 9") != std::string::npos; }
+    check(threw, "json: a syntax error says where");
     std::printf(failures ? "%d failures\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }

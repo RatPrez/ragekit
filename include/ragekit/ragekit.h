@@ -40,3 +40,4 @@
 #include "describe.h"
 #include "expression.h"
 #include "script.h"
+#include "json.h"
