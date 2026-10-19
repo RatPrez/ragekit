@@ -7,8 +7,10 @@ opens ([enhanced.md](enhanced.md)). Without it, files are written back in their 
 
 ```
 rk convert <in> <out> --enhanced|--legacy   a .ytd/.ydr/.ydd/.yft written for the other edition
-rk info <file> [-v]                    header, segments, contents (.ytyp/.ymap: structure infos and blocks; RBF: the tree)
-rk roundtrip <in> <out>                read, write, read back
+rk info <file> [-v]                    what the file holds: the facts of describe() (every kind the library reads)
+rk hex <file> [sys|gfx] [offset] [bytes]   a resource segment (inflated) or a plain file as hex
+rk roundtrip <in> <out>                read, write, read back (the byte-exact kinds say whether the output is identical)
+rk awc wav <file.awc> <dir>            every sound of an audio container as a .wav
 rk psodump [--max N] [--flat] <file>   a text dump of a PSO file (binary .ymt, .ypdb, .ymf ...); info -v lists its sections and schema
 rk ymf <in.ymf> [out.ymf]              list a streaming manifest, optionally write it back with write_ymf
 rk ymf-make <out.ymf> <interior> <ytyp> <ybn> [<ytyp dependency>...]   the manifest a custom interior resource needs
@@ -28,3 +30,8 @@ rk world info|at|near|mlos|occluders                 the world index, see game-i
 ```
 
 Run a command without arguments for its own usage.
+
+`rk info` prints the tree `describe(file, name, options)` returns (`describe.h`): a `Fact` per line, a label, a value and
+children, so a tool can show the same summary (a tree view, a property list) and the two never drift apart.
+`format_facts` gives the text. Without `-v` (`DescribeOptions::verbose`) lists stop after 20 items and say how many
+more there are.

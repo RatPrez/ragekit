@@ -1249,6 +1249,11 @@ static void survey(const GameIndex& gi, size_t every, const std::string& only, s
             if (r.first_error.empty()) r.first_error = gi.path(f) + ": " + e.what();
             continue;
         }
+        try { (void)describe(bytes, gi.file_name(f)); } catch (const std::exception& e) {   // what rk info prints
+            r.read_error++;
+            if (r.first_error.empty()) r.first_error = gi.path(f) + ": describe: " + e.what();
+            continue;
+        }
         r.read++;
         if (!tested_ext(ext)) { r.no_writer++; continue; }
         g_untested = false;

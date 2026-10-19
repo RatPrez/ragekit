@@ -42,6 +42,7 @@ in about four and a half minutes, all of which read back field for field.
 | `rk_ymf_full` | writes a manifest that uses every array, for CodeWalker to read back (`oracle ymf --xml`) |
 | `rk_gltf_test` | `write_glb` read back from the .glb: the winding against the normals, the alpha mode of each draw bucket |
 | `rk_robust_test` | malformed files throw `rk::Error`: sizes and counts past the buffer, made-up sizes that would be allocated (checked against the peak working set), structures that nest without end, a corrupt game index cache; no game files needed (`rk_robust_test [group...]` runs some) |
+| `rk_describe_test` | `describe()` on files built in memory: the facts, the item limit, the text; the survey runs it on every sampled file |
 | `rk_gameindex_test` | the game index's archives: `archive(i)` opens the archive whose entries are the indexed files, `archive_rank(i)` puts base, update.rpf, a pack and its nested archives in their places (with an install) |
 | `rk_materials_test` | the collision material names (`materials.h`): the built-in table, the materials.dat parser, the install's file against the table |
 | `rk_unknowns` | not a test: statistics of unnamed fields over the install, by topic (`rk_unknowns [--every=N] ywr ynd ycd ...`); the docs quote it |

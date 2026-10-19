@@ -64,6 +64,7 @@ add_library(ragekit STATIC
     src/clip.cpp
     src/awc.cpp
     src/materials.cpp
+    src/describe.cpp
     third_party/miniz/miniz.c
     third_party/miniz/miniz_tdef.c
     third_party/miniz/miniz_tinfl.c
@@ -142,6 +143,8 @@ if (RAGEKIT_BUILD_TESTS)
     target_link_libraries(rk_bench PRIVATE ragekit)
     add_executable(rk_gameindex_test tests/gameindex_test.cpp)   # the index's archives and their load ranks (with an install)
     target_link_libraries(rk_gameindex_test PRIVATE ragekit)
+    add_executable(rk_describe_test tests/describe_test.cpp)   # describe(): the facts of files built in memory
+    target_link_libraries(rk_describe_test PRIVATE ragekit)
     add_executable(rk_materials_test tests/materials_test.cpp)   # collision material names and materials.dat
     target_link_libraries(rk_materials_test PRIVATE ragekit)
     add_executable(rk_unknowns tests/unknowns.cpp)   # statistics of unnamed fields over the game install (evidence for docs)
