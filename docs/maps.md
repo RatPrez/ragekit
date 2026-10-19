@@ -53,6 +53,24 @@ rsc::write_file("my_interior.ytyp", write_ytyp(types));
 An MLO instance stores its own orientation; ordinary entities, including those inside an interior, store the inverse
 (163 rotated interiors of the game fit their interior proxies one way and none the other way).
 
+### Views of what is kept as objects
+
+`grass_batches(d)` reads the instanced grass of a ymap (`GrassBatch`: the batch's box, scale range, archetype, LOD
+distances and its 16-byte instances, positions in 65536ths of the box) and `lod_lights(d)` its LOD lights (`LodLight`:
+the CDistantLODLight's position and colour with the CLODLight's direction, falloff, flags, cone and corona for the
+same index). `set_grass_batches` / `set_lod_lights` write them back, keeping every byte the views have no field for:
+over every 4th ymap of the Legacy install the views written back change nothing. `meta_field(object, "offsetPosition")`
+finds any field of a kept structure (an extension, a composite entity type) by its name through the built-in
+descriptions; field names hash as written, case and all.
+
+What is left generic, from `rk_unknowns --every=4 meta` (items in every 4th file): of the map files, the archetype
+extensions (CExtensionDefParticleEffect 14,564, CExtensionDefLightEffect 7,499 with their CLightAttrDef 9,516,
+SpawnPoint 959, Ladder 760, SpawnPointOverride 426, AudioCollisionSettings 305 ...) and the occlude models (739)
+are reached through `MetaObject` and `meta_field`; the grass (9.3 million instances in 21,757 batches) and the LOD
+lights (165,839 vectors) through the views above. The `.ymt` meta files (ped variations: CPVTextureData 55,216,
+CPVDrawblData 11,141, CComponentInfo 11,074 ...; scenarios: CScenarioPoint 39,446, chaining nodes and edges; the
+streaming request lists) have no typed model: they read and write through the generic layer.
+
 ## Occluders (`occluder.h`)
 
 `occluder.h` decodes what `read_ymap` keeps in `MapData::box_occluders` (16 bytes: centre and size in quarter metres,

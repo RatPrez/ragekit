@@ -13,6 +13,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <span>
 #include "types.h"
@@ -230,5 +231,60 @@ MapTypes read_ytyp(std::span<const uint8_t> file);
 Bytes    write_ytyp(const MapTypes& t, bool compress = true);
 MapData  read_ymap(std::span<const uint8_t> file);
 Bytes    write_ymap(const MapData& d, bool compress = true);
+
+// --- typed views of what MapData keeps as MetaObjects ------------------------------------------
+// The view reads the objects; set_* writes a view back into them, keeping every byte the view has no field for (padding,
+// the W lanes of vectors), so set_x(d, x(d)) changes nothing.
+
+/// One instance of a grass batch (rage__fwGrassInstanceListDef__InstanceData, 16 bytes).
+struct GrassInstance {
+    uint16_t position[3] = {};   // across the batch's box: 0 at its min, 65535 at its max
+    uint8_t normal_x = 0, normal_y = 0;
+    uint8_t color[3] = {};
+    uint8_t scale = 0, ao = 0;
+    uint8_t pad[3] = {};
+};
+static_assert(sizeof(GrassInstance) == 16);
+
+/// A batch of instanced grass (rage__fwGrassInstanceListDef) of a ymap's instanced data.
+struct GrassBatch {
+    Vec3 box_min, box_max;       // BatchAABB
+    Vec3 scale_range;
+    uint32_t archetype = 0;
+    uint32_t lod_dist = 0;
+    float lod_fade_start_dist = 0, lod_inst_fade_range = 0, orient_to_terrain = 0;
+    std::vector<GrassInstance> instances;
+
+    Vec3 position(const GrassInstance& g) const;
+};
+std::vector<GrassBatch> grass_batches(const MapData& d);
+void set_grass_batches(MapData& d, const std::vector<GrassBatch>& batches);
+
+/// The LOD lights of a ymap: CLODLight (per light: direction, falloff, exponent, flags, hash, cone and corona bytes) with
+/// the position and colour its CDistantLODLight holds for the same index.
+struct LodLight {
+    Vec3 position;
+    uint32_t rgbi = 0;           // colour and intensity bytes
+    Vec3 direction;
+    float falloff = 0, falloff_exponent = 0;
+    uint32_t time_and_state_flags = 0, hash = 0;
+    uint8_t cone_inner = 0, cone_outer_or_cap_ext = 0, corona_intensity = 0;
+};
+struct LodLights {
+    std::vector<LodLight> lights;
+    uint16_t num_street_lights = 0, category = 0;   // CDistantLODLight
+    // Which of the two the ymap holds: the game's `lodlights` ymaps have the CLODLight arrays, its `distlodlights` ones
+    // only the distant positions and colours.
+    bool has_lod = true, has_distant = true;
+};
+LodLights lod_lights(const MapData& d);
+/// Throws rk::Error when the ymap has no LOD light objects to write into.
+void set_lod_lights(MapData& d, const LodLights& l);
+
+/// A field of a detached structure by its name as the game writes it ("offsetPosition": the names hash case and all),
+/// through the structure's description (the built-in tables):
+/// the bytes and type of the field, nullptr / 0 when the type or the field is not known.
+struct MetaField { const uint8_t* data = nullptr; uint8_t type = 0; size_t size = 0; };
+MetaField meta_field(const MetaObject& o, std::string_view name);
 
 } // namespace rk

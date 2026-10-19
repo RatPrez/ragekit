@@ -1196,11 +1196,25 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             // typed model: read -> write -> read, compare; the written file is also read as generic meta
             if (ext == ".ytyp") {
                 MapTypes ta = read_ytyp(file); Bytes tw = write_ytyp(ta); mix(tw); MapTypes tb = read_ytyp(tw); compare_types(c, ta, tb);
+                // every extension (CExtensionDef...) names its offsetPosition through meta_field: 12 bytes at offset 16
+                for (const Archetype& ar : ta.archetypes)
+                    for (const MetaObject& e : ar.extensions)
+                        if (known_struct(e.type)) {
+                            const MetaField f = meta_field(e, "offsetPosition");
+                            if (!f.data || f.size != 12 || f.data != e.data.data() + 16) c.fail("meta_field: offsetPosition of " + pso_name(e.type));
+                        }
                 Meta mw = read_meta(tw); if (mw.root_block != 1) c.fail("typed write: root block is not 1");
                 compare_struct_items(c, a, mw);
                 out_size = tw.size();
             } else {
                 MapData ta = read_ymap(file); Bytes tw = write_ymap(ta); mix(tw); MapData tb = read_ymap(tw); compare_map(c, ta, tb);
+                // the typed views written back through set_* change nothing
+                MapData tv = ta;
+                set_grass_batches(tv, grass_batches(ta));
+                if (ta.lod_lights.data.size() >= 136 && ta.distant_lod_lights.data.size() >= 48) set_lod_lights(tv, lod_lights(ta));
+                Cmp cv;
+                compare_map(cv, ta, tv);
+                if (cv.diffs) c.fail("views: " + cv.first_diff);
                 Meta mw = read_meta(tw); if (mw.root_block != 1) c.fail("typed write: root block is not 1");
                 compare_struct_items(c, a, mw);
                 out_size = tw.size();
@@ -1255,6 +1269,8 @@ static bool read_any(const std::string& ext, const std::string& name, const Byte
     if (ext == ".fxc") { (void)read_fxc(file); return true; }
     if (ext == ".gxt2") { (void)read_gxt2(file); return true; }
     if (ext == ".nametable") { (void)read_nametable(file); return true; }
+    if (ext == ".dds") { (void)read_dds(file, name); return true; }
+    if (ext == ".png") { (void)read_png(file); return true; }
     if (ext == ".ugc" || ext == ".json") { if (!looks_json(file)) return false; (void)parse_json(std::string_view((const char*)file.data(), file.size())); return true; }
     if (ext == ".awc") { if (!is_awc(file)) return false; (void)awc_decode(read_awc(file)); return true; }
     if (ext == ".sps") { (void)read_sps(std::string_view((const char*)file.data(), file.size()), name); return true; }
