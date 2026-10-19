@@ -130,6 +130,26 @@ static void writer_tests() {
     check(r2.find("stream/prop2.ydr") >= 0 && r2.find("stream/prop.ydr") < 0 && r2.find("new/file.txt") >= 0, "modified tree");
     i = r2.find("stream/big.ytd");
     check(i >= 0 && r2.extract(i).size() == big.size(), "untouched entry copied through");
+
+    // read: pending files as extract gives them; add_stored: entries of another archive copied without recompressing
+    check(m.read("new/file.txt") == bytes_of("new") && m.read("common/data/a.meta") == bytes_of("replaced"), "read: files added in memory");
+    check(m.read("stream/prop2.ydr") == rsc, "read: a resource copied from the source archive");
+    bool threw = false;
+    try { (void)m.read("stream"); } catch (const Error&) { threw = true; }
+    check(threw, "read: a directory throws");
+    const Rpf src = Rpf::open_memory(b.build(), "t.rpf");
+    RpfBuilder s;
+    for (const char* p : {"common/data/a.meta", "stream/prop.ydr", "dlc/child.rpf"}) s.add_stored(std::string("copy/") + p, src, src.find(p));
+    check(s.read("copy/common/data/a.meta") == text, "read: a stored copy");
+    const Rpf r3 = Rpf::open_memory(s.build(), "t.rpf");
+    bool same = true;
+    for (const char* p : {"common/data/a.meta", "stream/prop.ydr", "dlc/child.rpf"}) {
+        const int a = src.find(p), c = r3.find(std::string("copy/") + p);
+        same &= a >= 0 && c >= 0 && r3.extract_raw(c) == src.extract_raw(a) && r3.entries()[(size_t)c].stored_size == src.entries()[(size_t)a].stored_size;
+    }
+    check(same, "add_stored copies the stored bytes as they are");
+    auto loc = r3.resolve("copy/dlc/child.rpf/inner/hello.txt");
+    check(loc.archive && loc.archive->extract(loc.entry) == bytes_of("hello inner"), "add_stored: a nested archive still opens");
 }
 
 int main(int argc, char** argv) {

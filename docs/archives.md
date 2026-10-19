@@ -64,6 +64,8 @@ b.save("out.rpf");                                     // RpfWriteOptions: encry
   retail archive can be written back as an OPEN one. Nested archives that are not encrypted are copied byte for byte;
   encrypted ones (and all of them with `Nested::Rewrite`, which makes them editable through `nested(path)`) are
   rebuilt. `.ysc` resources stay encrypted as they were.
+- `add_stored(path, rpf, entry)` copies one entry of another archive the same way (as stored, read when the archive is
+  built), and `read(path)` gives a pending file as `extract` will once it is written.
 - Layout: the header, the entry table and the names padded to 512-byte blocks. A directory's children are contiguous
   and sorted by name (ordinal); directories get their children in depth-first preorder, as retail archives do; names
   are shared; files follow in table order, each padded to a block.

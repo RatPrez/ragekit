@@ -170,6 +170,12 @@ public:
     void add_file(const std::string& path, Bytes data);
     /// A nested archive built by another builder (built with the same options when this one is).
     void add_archive(const std::string& path, RpfBuilder child);
+    /// An entry of another archive copied as stored (no inflate, no deflate; encrypted .ysc stay so), read from `rpf` when
+    /// the archive is built: what from_archive does for every entry. A nested archive is copied as one binary entry.
+    void add_stored(const std::string& path, const Rpf& rpf, int entry);
+    /// A pending file as extract() would give it once written: a binary file's bytes, a resource's RSC7 file, a nested
+    /// archive built (with the default options). Throws for a directory or a path that is not there.
+    Bytes read(const std::string& path) const;
 
     bool exists(const std::string& path) const;
     bool is_directory(const std::string& path) const;

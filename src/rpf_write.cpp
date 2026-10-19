@@ -148,6 +148,24 @@ static Node* resolve(Node* root, const std::string& path) {
     return cur;
 }
 
+void RpfBuilder::add_stored(const std::string& path, const Rpf& rpf, int entry) {
+    const RpfEntry& e = rpf.entries().at((size_t)entry);
+    if (e.is_directory()) throw Error("'" + e.path + "' is a directory");
+    Node* n = put_file(root_.get(), path, e.is_resource() ? Node::Kind::Resource : Node::Kind::Binary);
+    n->src = std::make_shared<Rpf>(rpf);
+    n->src_idx = entry;
+}
+
+Bytes RpfBuilder::read(const std::string& path) const {
+    const Node* n = resolve(root_.get(), path);
+    if (!n) throw Error("no entry '" + path + "' in the archive being built");
+    switch (n->kind) {
+        case Node::Kind::Dir: throw Error("'" + path + "' is a directory");
+        case Node::Kind::Archive: return n->child->build();
+        default: return n->src ? n->src->extract(n->src_idx) : n->data;
+    }
+}
+
 bool RpfBuilder::exists(const std::string& path) const { return resolve(root_.get(), path) != nullptr; }
 bool RpfBuilder::is_directory(const std::string& path) const {
     Node* n = resolve(root_.get(), path);
