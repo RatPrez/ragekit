@@ -9,8 +9,13 @@ the two models field by field, one line per file.
 
 ```
 rk_roundtrip [--only=.ytyp,.ymap,.rel] [--record=f | --check=f] <file or directory>...
-rk_roundtrip --game[=install dir] [--every=N] [--max=N] [--only=...] [--record=f | --check=f]
+rk_roundtrip --game[=install dir|legacy|enhanced] [--every=N] [--max=N] [--only=...] [--record=f | --check=f]
+rk_roundtrip --game[=...] --survey [--every=N] [--max=N] [--only=...]
 ```
+
+`--survey` walks every file kind of the install (every Nth file of each extension) and prints one row per kind: how
+many files the library reads, how many come back through the round trip below, how many throw, and how many it has no
+reader or no writer for, then the first file of each failure. It is the measure of what ragekit does not support yet.
 
 `--game` takes a sample of a GTA V install through the game index: every Nth `rel ybn ydd ydr yld yft ypt ymap ymf ymt ytd ytyp meta xml`.
 PSO, RBF and `.rel` files must come back byte for byte, XML data files as the same document. A `.yft` is written

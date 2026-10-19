@@ -3,6 +3,7 @@
 // everything written per file, so a rewrite can be held to the bytes the previous code wrote.
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -20,7 +21,18 @@ namespace fs = std::filesystem;
 using namespace rk;
 
 static uint64_t g_digest = 0;
-static bool g_untested = false;   // test_bytes looked at the file but had nothing to test (a .yft without cloth)
+static bool g_untested = false;   // test_bytes looked at the file but had nothing to test (not a kind it writes)
+static bool g_quiet = false;      // --survey: the per-file lines are kept in g_said, not printed
+static std::string g_said;
+static void say(const char* fmt, ...) {
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    g_said = buf;
+    if (!g_quiet) std::fputs(buf, stdout);
+}
 static void mix(const Bytes& b) {
     uint64_t h = g_digest ? g_digest : 1469598103934665603ull;
     for (uint8_t c : b) { h ^= c; h *= 1099511628211ull; }
@@ -643,11 +655,11 @@ static bool test_rel(const std::string& label, const Bytes& file) {
         // the hash table must point at u32 fields (the game's hash references): every position readable
         for (uint32_t p : r.hash_table) { uint32_t h; if (!r.hash_at(p, h)) c.fail("hash table position out of range"); }
     } catch (const std::exception& e) {
-        std::printf("FAIL  %-60s  %s\n", label.c_str(), e.what());
+        say("FAIL  %-60s  %s\n", label.c_str(), e.what());
         return false;
     }
-    if (c.diffs) { std::printf("DIFF  %-60s  %d differences, first: %s\n", label.c_str(), c.diffs, c.first_diff.c_str()); return false; }
-    std::printf("ok    %-60s  %zu bytes, %zu items\n", label.c_str(), file.size(), items);
+    if (c.diffs) { say("DIFF%-60s  %d differences, first: %s\n", label.c_str(), c.diffs, c.first_diff.c_str()); return false; }
+    say("ok%-60s  %zu bytes, %zu items\n", label.c_str(), file.size(), items);
     return true;
 }
 
@@ -864,10 +876,28 @@ static Game game_of_file(const std::string& ext, const Bytes& file) {
 }
 static Game other(Game g) { return g == Game::Enhanced ? Game::Legacy : Game::Enhanced; }
 
+// A format that must come back byte for byte: read -> write gives the file again.
+static bool test_exact(const std::string& label, const Bytes& file, const char* kind, const std::function<Bytes(const Bytes&)>& rewrite) {
+    try {
+        Bytes w = rewrite(file); mix(w);
+        if (w != file) {
+            size_t i = 0; while (i < w.size() && i < file.size() && w[i] == file[i]) i++;
+            say("DIFF  %-60s  %s bytes differ at %zu (in %zu, out %zu)\n", label.c_str(), kind, i, file.size(), w.size());
+            return false;
+        }
+    } catch (const std::exception& e) {
+        say("FAIL  %-60s  %s\n", label.c_str(), e.what());
+        return false;
+    }
+    say("ok    %-60s  %zu bytes, %s\n", label.c_str(), file.size(), kind);
+    return true;
+}
+
 static bool test_bytes(const std::string& label, const std::string& ext, const Bytes& file) {
     g_digest = 0;
     const Game game = game_of_file(ext, file);
     if (ext == ".rel") return test_rel(label, file);
+    if (ext == ".gxt2") return test_exact(label, file, "text table", [](const Bytes& f) { return write_gxt2(read_gxt2(f)); });
     if ((ext == ".meta" || ext == ".xml") && !is_rbf(file) && !is_pso(file)) {
         // XML data files (vehicles.meta, carcols, handling, peds ...): parse -> write -> parse must give the same document
         try {
@@ -875,14 +905,14 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             const std::string w = write_xml(a);
             mix(Bytes(w.begin(), w.end()));
             if (!(parse_xml(w) == a)) {
-                std::printf("DIFF  %-60s  the written XML reads back as a different document\n", label.c_str());
+                say("DIFF%-60s  the written XML reads back as a different document\n", label.c_str());
                 return false;
             }
         } catch (const std::exception& e) {
-            std::printf("FAIL  %-60s  %s\n", label.c_str(), e.what());
+            say("FAIL  %-60s  %s\n", label.c_str(), e.what());
             return false;
         }
-        std::printf("ok    %-60s  %zu bytes, XML\n", label.c_str(), file.size());
+        say("ok%-60s  %zu bytes, XML\n", label.c_str(), file.size());
         return true;
     }
     if (is_rbf(file)) {
@@ -891,18 +921,18 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
             Bytes w = write_rbf(read_rbf(file)); mix(w);
             if (w != file) {
                 size_t i = 0; while (i < w.size() && i < file.size() && w[i] == file[i]) i++;
-                std::printf("DIFF  %-60s  RBF bytes differ at %zu (in %zu, out %zu)\n", label.c_str(), i, file.size(), w.size());
+                say("DIFF%-60s  RBF bytes differ at %zu (in %zu, out %zu)\n", label.c_str(), i, file.size(), w.size());
                 return false;
             }
         } catch (const std::exception& e) {
-            std::printf("FAIL  %-60s  %s\n", label.c_str(), e.what());
+            say("FAIL  %-60s  %s\n", label.c_str(), e.what());
             return false;
         }
-        std::printf("ok    %-60s  %zu bytes, RBF\n", label.c_str(), file.size());
+        say("ok%-60s  %zu bytes, RBF\n", label.c_str(), file.size());
         return true;
     }
     bool pso = is_pso(file) && (ext == ".ymt" || ext == ".ypdb" || ext == ".ymf");
-    if (!pso && !rsc::Resource::is_resource(file)) return true;
+    if (!pso && !rsc::Resource::is_resource(file)) { g_untested = true; return true; }
     Cmp c;
     size_t out_size = 0;
     try {
@@ -964,7 +994,7 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
                     ok = x.imap_name == y.imap_name && x.ityp_name == y.ityp_name && x.pack_file_name == y.pack_file_name;
                 }
                 if (!ok) c.fail("typed manifest: read_ymf(write_ymf(read_ymf)) differs");
-                if (mw != file) std::printf("note  %s: write_ymf bytes differ from the original (%zu vs %zu)\n", label.c_str(), mw.size(), file.size());
+                if (mw != file && !g_quiet) std::printf("note%s: write_ymf bytes differ from the original (%zu vs %zu)\n", label.c_str(), mw.size(), file.size());
             }
         } else if (ext == ".ytd") {
             auto a = read_ytd(file); Bytes w = write_ytd(a, game); mix(w); out_size = w.size(); auto b = read_ytd(w); compare_txd(c, a, b, "txd");
@@ -1050,16 +1080,16 @@ static bool test_bytes(const std::string& label, const std::string& ext, const B
                 compare_struct_items(c, a, mw);
                 out_size = tw.size();
             }
-        } else return true;
+        } else { g_untested = true; return true; }
     } catch (const std::exception& e) {
-        std::printf("FAIL  %-60s  %s\n", label.c_str(), e.what());
+        say("FAIL  %-60s  %s\n", label.c_str(), e.what());
         return false;
     }
     if (c.diffs) {
-        std::printf("DIFF  %-60s  %d differences, first: %s\n", label.c_str(), c.diffs, c.first_diff.c_str());
+        say("DIFF%-60s  %d differences, first: %s\n", label.c_str(), c.diffs, c.first_diff.c_str());
         return false;
     }
-    std::printf("ok    %-60s  %zu -> %zu bytes\n", label.c_str(), file.size(), out_size);
+    say("ok%-60s  %zu -> %zu bytes\n", label.c_str(), file.size(), out_size);
     return true;
 }
 
@@ -1071,7 +1101,7 @@ static bool test_file(const fs::path& path) {
 
 static bool tested_ext(const std::string& ext) {
     return ext == ".rel" || ext == ".ytd" || ext == ".ydr" || ext == ".ydd" || ext == ".ybn" || ext == ".ytyp" || ext == ".ymap" || ext == ".ymt" || ext == ".ypdb" || ext == ".ymf" ||
-           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv";
+           ext == ".meta" || ext == ".xml" || ext == ".yld" || ext == ".yft" || ext == ".ypt" || ext == ".ynv" || ext == ".gxt2";
 }
 
 // A file test_bytes had nothing to test in is not counted.
@@ -1087,15 +1117,104 @@ static void note_digest(const std::string& label) {
     if (it != g_recorded.end() && it->second != g_digest) { std::printf("CHANGED  %s\n", label.c_str()); g_changed++; }
 }
 
+// ---- the survey (--survey): what the library reads and writes back, per file kind, over a game install -----------------
+
+// Reads a file with the reader its kind has (what `rk info` does): false when the library has none, throws what the reader
+// throws.
+static bool read_any(const std::string& ext, const std::string& name, const Bytes& file) {
+    if (ext == ".rpf") { (void)Rpf::open_memory(file, name); return true; }
+    if (is_rbf(file)) { (void)read_rbf(file); return true; }
+    if (is_pso(file)) { (void)read_pso(file); return true; }
+    if (ext == ".rel" || ext.rfind(".dat", 0) == 0 && ext.size() > 4) { (void)read_rel(file); return true; }
+    if (ext == ".fxc") { (void)read_fxc(file); return true; }
+    if (ext == ".gxt2") { (void)read_gxt2(file); return true; }
+    if (ext == ".sps") { (void)read_sps(std::string_view((const char*)file.data(), file.size()), name); return true; }
+    if (ext == ".meta" || ext == ".xml") { (void)parse_xml(std::string_view((const char*)file.data(), file.size())); return true; }
+    if (!rsc::Resource::is_resource(file)) return false;
+    if (ext == ".ytd") (void)read_ytd(file);
+    else if (ext == ".ydr") (void)read_ydr(file);
+    else if (ext == ".ydd") (void)read_ydd(file);
+    else if (ext == ".yft") (void)read_yft(file);
+    else if (ext == ".ybn") (void)read_ybn(file);
+    else if (ext == ".ynv") (void)read_ynv(file);
+    else if (ext == ".ypt") (void)read_ypt(file);
+    else if (ext == ".yld") (void)read_yld(file);
+    else if (ext == ".ytyp") (void)read_ytyp(file);
+    else if (ext == ".ymap") (void)read_ymap(file);
+    else if (ext == ".ymt" || ext == ".ymf" || ext == ".ypdb") (void)read_meta(file);
+    else return false;
+    return true;
+}
+
+struct SurveyRow {
+    size_t files = 0, sampled = 0, read = 0, read_error = 0, no_reader = 0, same = 0, differ = 0, no_writer = 0;
+    std::string first_error, first_diff;
+};
+
+// One edition's table: every Nth file of each extension read, and written back where the round trip has a test for it.
+static void survey(const GameIndex& gi, size_t every, const std::string& only, size_t max_per_ext) {
+    std::map<std::string, SurveyRow> rows;
+    std::map<std::string, size_t> seen;
+    g_quiet = true;
+    for (const IndexedFile& f : gi.files()) {
+        const std::string& ext = gi.extension(f);
+        SurveyRow& r = rows[ext];
+        r.files++;
+        if (!only.empty() && only.find("," + ext + ",") == std::string::npos) continue;
+        if (seen[ext]++ % every != 0 || r.sampled >= max_per_ext) continue;
+        r.sampled++;
+        Bytes bytes;
+        try { bytes = gi.extract(f); } catch (const std::exception& e) {
+            r.read_error++;
+            if (r.first_error.empty()) r.first_error = gi.path(f) + ": extract: " + e.what();
+            continue;
+        }
+        try {
+            if (!read_any(ext, gi.file_name(f), bytes)) { r.no_reader++; if (r.first_error.empty()) r.first_error = gi.path(f) + ": no reader"; continue; }
+        } catch (const std::exception& e) {
+            r.read_error++;
+            if (r.first_error.empty()) r.first_error = gi.path(f) + ": " + e.what();
+            continue;
+        }
+        r.read++;
+        if (!tested_ext(ext)) { r.no_writer++; continue; }
+        g_untested = false;
+        const bool ok = test_bytes(gi.path(f), ext, bytes);
+        if (g_untested) { g_untested = false; r.no_writer++; continue; }
+        if (ok) r.same++;
+        else { r.differ++; if (r.first_diff.empty()) r.first_diff = g_said; }
+    }
+    g_quiet = false;
+    std::printf("%s (%s), every %zu\n", gi.info().game_dir.c_str(), game_name(gi.info().game), every);
+    std::printf("%-8s %8s %8s %8s %8s %9s %8s %8s %9s\n", "kind", "files", "sampled", "read", "errors", "no reader", "same", "differ", "no writer");
+    std::vector<std::pair<size_t, std::string>> order;
+    for (auto& [ext, r] : rows) order.push_back({r.files, ext});
+    std::sort(order.rbegin(), order.rend());
+    SurveyRow sum;
+    for (auto& [n, ext] : order) {
+        const SurveyRow& r = rows[ext];
+        std::printf("%-8s %8zu %8zu %8zu %8zu %9zu %8zu %8zu %9zu\n", ext.c_str(), r.files, r.sampled, r.read, r.read_error, r.no_reader, r.same, r.differ, r.no_writer);
+        sum.files += r.files; sum.sampled += r.sampled; sum.read += r.read; sum.read_error += r.read_error; sum.no_reader += r.no_reader;
+        sum.same += r.same; sum.differ += r.differ; sum.no_writer += r.no_writer;
+    }
+    std::printf("%-8s %8zu %8zu %8zu %8zu %9zu %8zu %8zu %9zu\n", "all", sum.files, sum.sampled, sum.read, sum.read_error, sum.no_reader, sum.same, sum.differ, sum.no_writer);
+    for (auto& [n, ext] : order) {
+        const SurveyRow& r = rows[ext];
+        if (!r.first_error.empty()) std::printf("error  %s  %s\n", ext.c_str(), r.first_error.c_str());
+        if (!r.first_diff.empty()) std::printf("differ %s  %s", ext.c_str(), r.first_diff.c_str());
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::printf("usage: rk_roundtrip [--only=.ytyp,.ymap,.rel] [--record=f | --check=f] <file or directory>...\n"
-                    "       rk_roundtrip --game[=install dir] [--every=N] [--max=N] [--only=...] [--record=f | --check=f]\n");
+                    "       rk_roundtrip --game[=install dir|legacy|enhanced] [--every=N] [--max=N] [--only=...] [--record=f | --check=f]\n"
+                    "       rk_roundtrip --game[=...] --survey [--every=N] [--max=N] [--only=...]   per file kind: read, written back, failed\n");
         return 2;
     }
     int failed = 0, total = 0;
     std::string only, game, record, check; // only: comma separated extensions, e.g. ".ytyp,.ymap"
-    bool use_game = false;
+    bool use_game = false, use_survey = false;
     size_t every = 1, max_per_ext = SIZE_MAX;
     std::vector<fs::path> paths;
     for (int i = 1; i < argc; i++) {
@@ -1103,6 +1222,7 @@ int main(int argc, char** argv) {
         if (a.rfind("--only=", 0) == 0) only = "," + lower(a.substr(7)) + ",";
         else if (a == "--game") use_game = true;
         else if (a == "--cross") g_cross = true;
+        else if (a == "--survey") use_survey = true;
         else if (a.rfind("--game=", 0) == 0) { use_game = true; game = a.substr(7); }
         else if (a.rfind("--every=", 0) == 0) every = std::max<size_t>(1, std::stoul(a.substr(8)));
         else if (a.rfind("--max=", 0) == 0) max_per_ext = std::stoul(a.substr(6));
@@ -1118,7 +1238,10 @@ int main(int argc, char** argv) {
     }
     auto wanted = [&](const std::string& ext) { return tested_ext(ext) && (only.empty() || only.find("," + ext + ",") != std::string::npos); };
     if (use_game) {
-        GameIndex gi = GameIndex::open(game.empty() ? GameIndex::default_game_dir() : game);
+        if (game.empty() || game == "legacy" || game == "enhanced")
+            game = GameIndex::default_game_dir(game == "enhanced" ? Game::Enhanced : game == "legacy" ? Game::Legacy : default_game());
+        GameIndex gi = GameIndex::open(game);
+        if (use_survey) { survey(gi, every, only, max_per_ext); return 0; }
         std::map<std::string, size_t> seen, taken;
         for (const IndexedFile& f : gi.files()) {
             const std::string& ext = gi.extension(f);

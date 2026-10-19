@@ -38,6 +38,7 @@ third_party/clipper2  polygon clipping for the navmesh builder (Boost licence)
 | RBF (creature metadata .ymt ...) | yes | yes | byte for byte: the expressions of clothing components and props, cutscene and Bink metadata |
 | XML data files (.meta) | yes | yes | vehicles, carcols, carvariations, handling, vehiclelayouts, peds, pedalternatevariations, content.xml ... |
 | .rel audio data | yes | yes | byte for byte; the dat151 items an interior needs; interior audio occlusion files |
+| .gxt2 text tables | yes | yes | byte for byte on every game file ([docs/other-formats.md](docs/other-formats.md)) |
 | RPF7 archives | yes | yes | AES, NG, OPEN and plain; nested archives; writes all four, NG as the game encrypts it; Legacy and Enhanced alike |
 | CodeWalker XML | no | yes | what CodeWalker's "Export XML" writes for .ydr/.ydd/.ybn/.ytd, which CodeWalker and Sollumz import |
 | glTF 2.0 | no | yes | .glb with textures |
@@ -113,6 +114,7 @@ rsc::write_file("prop_copy.ydr", write_ydr(d));
 - [GTA V Enhanced](docs/enhanced.md): choosing the edition, what differs, converting between Legacy and Enhanced
 - [Map files](docs/maps.md): the meta container, ytyp and ymap, occluders
 - [PSO, RBF, XML data, manifests and audio](docs/pso-and-audio.md): PSO and RBF files, `.meta` XML, `_manifest.ymf`, `.rel`, interior audio
+- [Text tables, records, path nodes, animations and audio containers](docs/other-formats.md): `.gxt2` and the other smaller formats
 - [RPF archives](docs/archives.md): reading, keys, writing
 - [The game index and the world index](docs/game-index.md)
 - [The rk tool](docs/rk-tool.md)

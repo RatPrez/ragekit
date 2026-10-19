@@ -259,6 +259,14 @@ static int cmd_info(const std::string& path, bool verbose) {
         }
         return 0;
     }
+    if (is_gxt2(file)) {   // text tables: every label's text with -v, else the first 20
+        const TextTable t = read_gxt2(file);
+        std::printf("Text table: %zu entries\n", t.entries.size());
+        for (size_t i = 0; i < t.entries.size() && (verbose || i < 20); i++)
+            std::printf("  %s = %s\n", hash_name(t.entries[i].hash).c_str(), t.entries[i].text.c_str());
+        if (!verbose && t.entries.size() > 20) std::printf("  ... (-v lists all)\n");
+        return 0;
+    }
     if (!rsc::Resource::is_resource(file)) { std::printf("%s: not an RSC7 resource\n", path.c_str()); return 1; }
     print_resource_header(file, ext_of(path));
     std::string ext = ext_of(path);
@@ -313,10 +321,13 @@ static int cmd_roundtrip(const std::string& in, const std::string& out) {
     std::string ext = ext_of(in);
     Bytes written;
     if (!g_edition_chosen && rsc::Resource::is_resource(file)) set_default_game(rsc::game_of(ext, rsc::Resource::load(file).version));
-    if (is_pso(file)) { // binary .ymt / .ypdb
-        written = write_pso(read_pso(file));
+    // the formats that come back byte for byte
+    const char* exact = nullptr;
+    if (is_pso(file)) { written = write_pso(read_pso(file)); exact = "PSO"; }   // binary .ymt / .ypdb
+    else if (is_gxt2(file)) { written = write_gxt2(read_gxt2(file)); exact = "text table"; }
+    if (exact) {
         rsc::write_file(out, written);
-        std::printf("%s: PSO in %zu bytes -> out %zu bytes (%s)\n", fs::path(in).filename().string().c_str(), file.size(), written.size(), written == file ? "identical" : "DIFFERENT");
+        std::printf("%s: %s in %zu bytes -> out %zu bytes (%s)\n", fs::path(in).filename().string().c_str(), exact, file.size(), written.size(), written == file ? "identical" : "DIFFERENT");
         return written == file ? 0 : 1;
     }
     if (ext == ".ytd") written = write_ytd(read_ytd(file));
