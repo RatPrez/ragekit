@@ -1,7 +1,7 @@
 # ragekit and CodeWalker: file format coverage
 
 What CodeWalker.Core can do per file type, next to what ragekit does today. "XML" means CodeWalker's XML round trip for
-that type (its import and export). Updated 2026-10-16.
+that type (its import and export). Updated 2026-10-22.
 
 Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 
@@ -35,7 +35,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | .yvr vehicle record | yes + XML | **yes** (`records.h`, every game file byte for byte but the vtable) | XML |
 | .ywr waypoint record | yes + XML | **yes** (`records.h`, the heading and speed named; every game file) | XML |
 | .ysc script | - (no decompiler) | **yes** (`script.h`: header, code, statics, globals, natives rotated back, strings; every file of both editions) | a disassembler |
-| .gfx Scaleform movie | read (as a file) | **yes** (`gfx.h`: every SWF tag kept, exports listed; every movie of both editions) | the ActionScript and shapes |
+| .gfx Scaleform movie | read (as a file) | **yes** (`gfx.h`: every SWF tag kept, exports listed; every movie of both editions; `gfx_build.h`: shapes, sprites, placements, labels and exports read into their fields and made from scratch, interior minimaps made as the game's) | the ActionScript |
 
 ## Meta data (`.ytyp` / `.ymap` / `.ymt` / `.ymf` and the data files)
 
@@ -43,7 +43,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 |---|---|---|---|
 | Meta container (RSC7 `PRD0`) | yes + XML (MetaXml/XmlMeta, drops some lists) | **yes**, a lossless generic layer (`meta.h`) | XML |
 | .ytyp map types | yes + XML (loses container LODs etc.) | **yes** typed (base/time/MLO archetypes, rooms, portals, entity sets, extensions) + generic | XML |
-| .ymap map data | yes + XML | **yes** typed (entities, MLO instances, car generators, box occluders, timecycle modifiers; occluder meshes, LOD lights, instanced grass/props, container LODs kept as they are) + decoded occluders (`occluder.h`) | typed LOD lights and grass; XML |
+| .ymap map data | yes + XML | **yes** typed (entities, MLO instances, car generators, box occluders, timecycle modifiers; occluder meshes, instanced props and container LODs kept as they are; typed views of LOD lights and instanced grass) + decoded occluders (`occluder.h`) | XML |
 | PSO (`.ymt`, `.ypdb`, `.ymf`, many `.meta` binaries) | yes + XML (PsoBuilder) | **yes** as a container (byte for byte), a schema-driven walker and dump (`pso.h`), typed `_manifest.ymf` (`manifest.h`) | XML -> PSO; typed models for carcols, carvariations, peds ... |
 | RBF (creature metadata `.ymt`, cutscene / Bink metadata) | yes + XML | **yes**, byte for byte on all 200 game files (`rbf.h`) | XML |
 | XML `.meta` text files (vehicles.meta, carcols.meta, handling, content.xml, setup2.xml) | parsed into typed classes | **yes**: a DOM reader and writer (`xml_dom.h`); all 2,857 game files read back the same | typed models |
@@ -51,7 +51,7 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | Cache dat (`gta5_cache_y.dat`) | read | **yes** (`cachedat.h`: every module kept, the map data store, interior proxies and bounds store typed; every cache file of both editions back byte for byte; `world.h` uses them) | none |
 | Heightmap | read, write | **yes** (`heightmap.h`: both grids, the height at a position; every game file byte for byte) | none |
 | Watermap / distant lights | read, write | - | everything (one or two files each) |
-| Audio: .awc wave containers | yes + XML | **yes** (`awc.h`: every chunk kept, byte for byte on every game file; decrypted; PCM and ADPCM decoded to .wav) | Enhanced's codec 7; XML |
+| Audio: .awc wave containers | yes + XML | **yes** (`awc.h`: every chunk kept, byte for byte on every game file; decrypted; PCM and ADPCM decoded to .wav; wave packs made from .wav files, PCM or IMA ADPCM) | Enhanced's codec 7; XML |
 | Audio: .rel (dat54 sounds, dat151 game, dat4 speech/audioconfig, dat10 synths, dat15 mix, dat16 curves, dat22 categories, dat149/150) | yes + XML (a typed class per item type) | **container: yes** (`rel.h`: byte for byte on 378 game and server files; index, name, hash and pack tables; a builder with the game's alignment and index order); **typed: dat151 InteriorSettings, InteriorRoom, StaticEmitterList, DoorAudioSettingsLink** | typed structs for the other ~150 item types; XML |
 | Audio occlusion `.ymt` (naOcclusionInteriorMetadata) | read as a generic PSO; no builder | **yes** (`audio_occlusion.h`: typed read/write of portal infos and path nodes, paths from rooms and portals, proxy hash) | the game's order of the path node list is not reproduced |
 | .fxc compiled shaders | read + XML | **read**: constant buffers, variables with types, registers, defaults and annotations, techniques (`fxc.h`) | the bytecode |
@@ -65,7 +65,8 @@ Legend: **yes** = read and write; **read** = read only; **-** = nothing yet.
 | Game data model (archetype lookup, DLC load order, content.xml change sets) | GameFileCache | `gameindex.h` (files and archetypes by name, load order, texture parents, cached) and `world.h` (the mounted map, entities and collision at a position) |
 | Jenkins hash and name registry | yes, with large name lists | `joaat`, `hash_or_name`, names from the install's own file names |
 | Shader parameter names per shader | ShaderParams.cs tables | `shader_db.h`, read from the install's `.fxc` / `.sps` files |
-| Model export | OBJ, XML; the viewer renders | glTF 2.0 `.glb` with textures (write only) |
+| Model export | OBJ, XML | glTF 2.0 `.glb` with textures (write only) |
+| Rendering | its own Direct3D 11 viewer | `ragekit::render`: materials from the game's shaders, meshes and textures for any GPU backend, the timecycle's light, local lights and particle effects; no graphics API ([render.md](render.md)) |
 | Image codecs | DDSIO (DDS only) | DDS and PNG, decode and encode, mip generation |
 | Editing UI, 3D world viewer, project system | yes (the CodeWalker app) | out of scope: a library for tools to build on |
 | Platform | .NET on Windows | any C++20 compiler; tested with MSYS2 GCC on Windows |

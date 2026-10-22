@@ -17,6 +17,7 @@ On Windows the author builds with MSYS2's UCRT64 GCC (`build.cmd` sets the path 
 | `RAGEKIT_BUILD_CLI` | ON when ragekit is the top-level project | `rk`, the command line tool ([rk-tool.md](rk-tool.md)) |
 | `RAGEKIT_BUILD_TESTS` | ON when ragekit is the top-level project | the `rk_*` test programs ([testing.md](testing.md)) |
 | `RAGEKIT_BUILD_EXAMPLES` | ON when ragekit is the top-level project | the programs in `examples/` |
+| `RAGEKIT_BUILD_RENDER` | ON when ragekit is the top-level project | `ragekit::render`, drawables for a GPU backend ([render.md](render.md)) |
 
 ## Using it from your project
 
@@ -29,7 +30,7 @@ include(FetchContent)
 FetchContent_Declare(
     ragekit
     GIT_REPOSITORY https://github.com/RatPrez/ragekit.git
-    GIT_TAG        v0.2.0        # a release tag (or a commit hash); main follows the latest
+    GIT_TAG        v0.3.0        # a release tag (or a commit hash); main follows the latest
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(ragekit)
@@ -37,10 +38,11 @@ FetchContent_MakeAvailable(ragekit)
 target_link_libraries(my_tool PRIVATE ragekit::ragekit)
 ```
 
-- `GIT_TAG` picks the version. A release tag (`v0.2.0`) or a commit hash keeps your build reproducible; `main` gets
+- `GIT_TAG` picks the version. A release tag (`v0.3.0`) or a commit hash keeps your build reproducible; `main` gets
   whatever was pushed last. `GIT_SHALLOW` only works with a tag or a branch, so drop it when you pin a commit hash.
-- Inside your project only the library builds; the `rk` tool, the tests and the examples stay off unless you set
-  `RAGEKIT_BUILD_CLI`, `RAGEKIT_BUILD_TESTS` or `RAGEKIT_BUILD_EXAMPLES` to ON before `FetchContent_MakeAvailable`.
+- Inside your project only the library builds; the `rk` tool, the tests, the examples and `ragekit::render` stay off
+  unless you set `RAGEKIT_BUILD_CLI`, `RAGEKIT_BUILD_TESTS`, `RAGEKIT_BUILD_EXAMPLES` or `RAGEKIT_BUILD_RENDER` to ON
+  before `FetchContent_MakeAvailable`.
 - Linking `ragekit::ragekit` adds its include directory and C++20 to your target.
 - To build against a local checkout instead (offline, or while changing ragekit), configure with
   `-DFETCHCONTENT_SOURCE_DIR_RAGEKIT=path/to/ragekit`: CMake then uses that folder and downloads nothing.

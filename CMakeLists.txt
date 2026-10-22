@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ragekit VERSION 0.2.0 LANGUAGES C CXX)
+project(ragekit VERSION 0.3.0 LANGUAGES C CXX)
 
 # ragekit: a C++20 library for reading and writing RAGE (GTA V) resource files
 # (RSC7 containers: .ydr .ydd .ytd .yft .ybn ...) and converting them to and from

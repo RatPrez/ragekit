@@ -9,6 +9,18 @@ dependencies, miniz (public domain) and Clipper2 (Boost licence), are vendored; 
 ragekit is not affiliated with or endorsed by Rockstar Games or Take-Two Interactive. It contains no game data: you work
 on files from your own copy of the game.
 
+> **New in 0.3.0**
+> - **`ragekit::render`**: draw the game's models with the game's own shading. Materials from the shaders, meshes and
+>   textures ready for any GPU, the timecycle's light at any hour and weather, the models' lights and particle effects
+>   played ([docs/render.md](docs/render.md)).
+> - **Navmeshes**: edit polygons and rebuild an area from collision.
+> - **Writing audio and Scaleform**: `.awc` wave packs from your own `.wav` files, `.gfx` movies made from scratch
+>   (interior minimaps as the game's).
+> - **More formats read and written back the same**: `.ycd`, `.yed` / `.yfd`, `.ybd`, `.ysc`, `.ynd`, `.yvr` / `.ywr`,
+>   `.gxt2`, `.ypdb`, `.json` / `.ugc`, the cache `.dat` files and `heightmap.dat`.
+> - **Sturdier**: malformed files throw instead of reading past their data, and a BC7 encoder means every texture format
+>   encodes.
+
 ```
 include/ragekit/   the public headers (ragekit.h includes them all)
 src/               the library
@@ -40,10 +52,11 @@ third_party/clipper2  polygon clipping for the navmesh builder (Boost licence)
 | .rel audio data | yes | yes | byte for byte; the dat151 items an interior needs; interior audio occlusion files |
 | .gxt2 text tables | yes | yes | byte for byte on every game file ([docs/other-formats.md](docs/other-formats.md)) |
 | .ycd clip dictionaries | yes | yes | clips, animations and tracks; every structure kept as read, the channel data raw |
-| .awc audio containers | yes | yes | byte for byte; decrypted, PCM and ADPCM decoded to .wav |
+| .awc audio containers | yes | yes | byte for byte; decrypted, PCM and ADPCM decoded to .wav; wave packs made from .wav files |
 | .ynd path nodes, .yvr / .ywr recordings | yes | yes | every game file |
 | .yed / .yfd expressions and frame filters, .ybd bound dictionaries | yes | yes | every structure kept as read; every game file |
-| .ysc scripts, .gfx Scaleform movies, .ypdb pose matchers, cache .dat, heightmap.dat | yes | yes | header, code, natives and strings of scripts; SWF tags; every game file of both editions back as read |
+| .ysc scripts, .gfx Scaleform movies, .ypdb pose matchers, cache .dat, heightmap.dat | yes | yes | header, code, natives and strings of scripts; SWF tags, and movies made from shapes and sprites (interior minimaps as the game's); every game file of both editions back as read |
+| .json / .ugc | yes | yes | a DOM reader and writer |
 | RPF7 archives | yes | yes | AES, NG, OPEN and plain; nested archives; writes all four, NG as the game encrypts it; Legacy and Enhanced alike |
 | CodeWalker XML | no | yes | what CodeWalker's "Export XML" writes for .ydr/.ydd/.ybn/.ytd, which CodeWalker and Sollumz import |
 | glTF 2.0 | no | yes | .glb with textures |
@@ -51,6 +64,10 @@ third_party/clipper2  polygon clipping for the navmesh builder (Boost licence)
 
 And beyond single files: an index of every file and archetype of a GTA V install by name, with the game's DLC load
 order (`gameindex.h`), and a world index of what stands where on the map the game loads (`world.h`).
+
+And for drawing them, an optional second target, `ragekit::render`: drawables as the materials, meshes and textures a
+GPU backend uploads, with the game's shading, the scene light from the game's timecycle, the drawables' lights and
+particle effects played. No graphics API is in it ([docs/render.md](docs/render.md)).
 
 ## Made with ragekit
 
@@ -77,7 +94,7 @@ include(FetchContent)
 FetchContent_Declare(
     ragekit
     GIT_REPOSITORY https://github.com/RatPrez/ragekit.git
-    GIT_TAG        v0.2.0        # a release tag (or a commit hash); main follows the latest
+    GIT_TAG        v0.3.0        # a release tag (or a commit hash); main follows the latest
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(ragekit)
@@ -122,6 +139,7 @@ rsc::write_file("prop_copy.ydr", write_ydr(d));
 - [Text tables, records, path nodes, animations and audio containers](docs/other-formats.md): `.gxt2` and the other smaller formats
 - [RPF archives](docs/archives.md): reading, keys, writing
 - [The game index and the world index](docs/game-index.md)
+- [Rendering](docs/render.md): `ragekit::render`, materials, meshes and textures for a GPU, the timecycle, lights and particles
 - [The rk tool](docs/rk-tool.md)
 - [How it is checked](docs/testing.md)
 - [Unnamed fields](docs/unknowns.md): what the game's files say about the fields ragekit does not name
