@@ -1,5 +1,6 @@
 #include "rpf_crypto.h"
 #include <array>
+#include <bit>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -240,7 +241,7 @@ struct WordInverse {
 
 struct NgInverse { WordInverse w[17][4]; bool ok = true; };
 
-int parity(uint32_t v) { return __builtin_parity(v); }
+int parity(uint32_t v) { return std::popcount(v) & 1; }
 
 NgInverse build(const uint32_t* tables) {
     NgInverse ni;

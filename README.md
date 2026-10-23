@@ -9,6 +9,8 @@ dependencies, miniz (public domain) and Clipper2 (Boost licence), are vendored; 
 ragekit is not affiliated with or endorsed by Rockstar Games or Take-Two Interactive. It contains no game data: you work
 on files from your own copy of the game.
 
+> **0.3.1**: builds with MSVC as well as GCC and Clang (the NG key recovery used a GCC-only parity builtin).
+>
 > **New in 0.3.0**
 > - **`ragekit::render`**: draw the game's models with the game's own shading. Materials from the shaders, meshes and
 >   textures ready for any GPU, the timecycle's light at any hour and weather, the models' lights and particle effects
@@ -94,7 +96,7 @@ include(FetchContent)
 FetchContent_Declare(
     ragekit
     GIT_REPOSITORY https://github.com/RatPrez/ragekit.git
-    GIT_TAG        v0.3.0        # a release tag (or a commit hash); main follows the latest
+    GIT_TAG        v0.3.1        # a release tag (or a commit hash); main follows the latest
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(ragekit)
